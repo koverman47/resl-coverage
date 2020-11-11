@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+
+  <arg name="ground_truth" default="false"/>
+
+  <arg name="name" default="husky"/>
+  <arg name="description"
+       default="$(find arl_unity_ros_abstract)/config/husky.yaml"/>
+
+  <arg name="x" default="0" />
+  <arg name="y" default="0" />
+  <arg name="z" default="1" />
+  <arg name="roll" default="0" />
+  <arg name="pitch" default="0" />
+  <arg name="yaw" default="0" />
+
+  <arg name="unity_namespace" default="Simulation/"/>
+  <group ns="$(arg name)">
+
+    <node pkg="arl_unity_ros"
+          type="spawn_robot.py"
+          name="spawn_$(arg name)"
+          output="screen">
+      <rosparam command="load" file="$(arg description)" subst_value="true"/>
+    </node>
+
+    <!-- static transform to connect tf tree to ground truth -->
+    <node if="$(arg ground_truth)"
+          pkg="tf2_ros"
+          type="static_transform_publisher"
+          name="ground_truth_tf_broadcaster"
+          args="0 0 0 0 0 0 $(arg name)/TrueState $(arg name)"/>
+
+    <!-- interface for controlling the husky with twist commands -->
+    <node pkg="arl_unity_ros_abstract"
+          type="twist_to_unity.py"
+          name="twist_to_unity_cmd_node">
+      <param name="unity_name" value="$(arg name)"/>
+      <remap from="unity_cmd" to="/unity_command/command_topic"/>
+      <remap from="twist_cmd" to="cmd_vel"/>
+      <param name="ground_robot" value="true"/>
+    </node>
+
+    <!-- interface for controlling the husky with pose commands -->
+	<!--<node pkg="arl_unity_ros_abstract"
+          type="pose_to_unity.py"
+          name="pose_to_unity_cmd_node">
+      <param name="unity_name" value="$(arg name)"/>
+      <remap from="unity_cmd" to="/unity_command/command_topic"/>
+      <remap from="pose_cmd" to="set_pose"/>
+	</node>-->
+
+  </group>
+
+</launch>

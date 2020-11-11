@@ -1,0 +1,21 @@
+<package format="2">
+  <name>resl_coverage</name>
+  <version>0.1.0</version>
+  <description>
+    Sitcore-RESL Coverage
+  </description>
+  <maintainer email="koverman@usc.edu">Kirby Overman</maintainer>
+  <author email="koverman@usc.edu">Kirby Overman</author>
+  <license>ARL-Shared</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>message_generation</build_depend>
+  <exec_depend>message_runtime</exec_depend>
+
+  <depend>arl_unity_ros</depend>
+  <depend>arl_unity_ros_air</depend>
+
+  <depend>rosflight_firmware</depend>
+  <depend>rosflight_msgs</depend>
+  <depend>rosflight_utils</depend>
+</package>

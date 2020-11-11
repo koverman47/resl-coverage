@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+
+  <arg name="name" default="husky"/>
+  <arg name="control_args" default="0 0 0"/>
+
+  <group ns="$(arg name)">
+	  <node pkg="resl_coverage" type="husky_controller.py" name="controller_$(arg name)" args="$(arg control_args)" output="screen"/>
+	  <node pkg="resl_coverage" type="husky_target_mission.py" name="target_$(arg name)" args="$(arg control_args)" output="screen"/>
+
+  </group>
+
+</launch>

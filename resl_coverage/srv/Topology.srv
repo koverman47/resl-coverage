@@ -1,0 +1,4 @@
+int8[] edges
+float32[] weight_matrix
+---
+bool rec

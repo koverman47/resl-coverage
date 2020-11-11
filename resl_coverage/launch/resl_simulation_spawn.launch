@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+	<arg name="launch_unity" default="true"/>
+	<arg name="simulator_param_file" default="$(find arl_unity_ros)/config/floodedgrounds.yaml" />
+
+	<include file="$(find arl_unity_ros)/launch/simulator.launch">
+		<arg name="launch_unity" value="$(arg launch_unity)"/>
+		<arg name="param_file" value="$(arg simulator_param_file)"/>
+	</include>
+
+	<arg name="quadrotor_description" default="$(find arl_unity_ros_abstract)/config/quadrotor.yaml"/>
+
+	<arg name="husky_description" default="$(find arl_unity_ros_abstract)/config/husky.yaml"/>
+
+	<include file="$(find resl_coverage)/launch/abstract_quadrotor.launch">
+		<arg name="name" value="tracker0"/>
+		<arg name="description" value="$(arg quadrotor_description)" />
+		<arg name="x" value="0"/>
+		<arg name="y" value="3"/>
+		<arg name="z" value="1"/>
+		<arg name="roll" value="0"/>
+		<arg name="pitch" value="0"/>
+		<arg name="yaw" value="0"/>
+	</include>
+	<include file="$(find resl_coverage)/launch/abstract_quadrotor.launch">
+		<arg name="name" value="tracker1"/>
+		<arg name="description" value="$(arg quadrotor_description)" />
+		<arg name="x" value="-2"/>
+		<arg name="y" value="3"/>
+		<arg name="z" value="1"/>
+		<arg name="roll" value="0"/>
+		<arg name="pitch" value="0"/>
+		<arg name="yaw" value="0"/>
+	</include>
+	<include file="$(find resl_coverage)/launch/abstract_quadrotor.launch">
+		<arg name="name" value="tracker2"/>
+		<arg name="description" value="$(arg quadrotor_description)" />
+		<arg name="x" value="2"/>
+		<arg name="y" value="3"/>
+		<arg name="z" value="1"/>
+		<arg name="roll" value="0"/>
+		<arg name="pitch" value="0"/>
+		<arg name="yaw" value="0"/>
+	</include>
+	<include file="$(find resl_coverage)/launch/abstract_quadrotor.launch">
+		<arg name="name" value="tracker3"/>
+		<arg name="description" value="$(arg quadrotor_description)" />
+		<arg name="x" value="-4"/>
+		<arg name="y" value="3"/>
+		<arg name="z" value="1"/>
+		<arg name="roll" value="0"/>
+		<arg name="pitch" value="0"/>
+		<arg name="yaw" value="0"/>
+	</include>
+	<include file="$(find resl_coverage)/launch/abstract_quadrotor.launch">
+		<arg name="name" value="tracker4"/>
+		<arg name="description" value="$(arg quadrotor_description)" />
+		<arg name="x" value="4"/>
+		<arg name="y" value="3"/>
+		<arg name="z" value="1"/>
+		<arg name="roll" value="0"/>
+		<arg name="pitch" value="0"/>
+		<arg name="yaw" value="0"/>
+	</include>
+	<include file="$(find resl_coverage)/launch/abstract_husky.launch">
+		<arg name="name" value="target0"/>
+		<arg name="description" value="$(arg husky_description)" />
+		<arg name="x" value="0"/>
+		<arg name="y" value="0"/>
+		<arg name="z" value="0.4"/>
+		<arg name="roll" value="0"/>
+		<arg name="pitch" value="0"/>
+		<arg name="yaw" value="0"/>
+	</include>
+	<include file="$(find resl_coverage)/launch/abstract_husky.launch">
+		<arg name="name" value="target1"/>
+		<arg name="description" value="$(arg husky_description)" />
+		<arg name="x" value="-2"/>
+		<arg name="y" value="0"/>
+		<arg name="z" value="0.4"/>
+		<arg name="roll" value="0"/>
+		<arg name="pitch" value="0"/>
+		<arg name="yaw" value="0"/>
+	</include>
+</launch>

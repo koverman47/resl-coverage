@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+	<include file="$(find resl_coverage)/launch/abstract_tracker_mission.launch">
+		<arg name="name" value="tracker0"/>
+		<arg name="control_args" value="0 3 5"/>
+		<arg name="track_args" value="2 5 0 3"/>
+	</include>
+	<include file="$(find resl_coverage)/launch/abstract_tracker_mission.launch">
+		<arg name="name" value="tracker1"/>
+		<arg name="control_args" value="-2 3 5"/>
+		<arg name="track_args" value="2 5 -2 3"/>
+	</include>
+	<include file="$(find resl_coverage)/launch/abstract_tracker_mission.launch">
+		<arg name="name" value="tracker2"/>
+		<arg name="control_args" value="2 3 5"/>
+		<arg name="track_args" value="2 5 2 3"/>
+	</include>
+	<include file="$(find resl_coverage)/launch/abstract_tracker_mission.launch">
+		<arg name="name" value="tracker3"/>
+		<arg name="control_args" value="-4 3 5"/>
+		<arg name="track_args" value="2 5 -4 3"/>
+	</include>
+	<include file="$(find resl_coverage)/launch/abstract_tracker_mission.launch">
+		<arg name="name" value="tracker4"/>
+		<arg name="control_args" value="4 3 5"/>
+		<arg name="track_args" value="2 5 4 3"/>
+	</include>
+	<include file="$(find resl_coverage)/launch/abstract_target_mission.launch">
+		<arg name="name" value="target0"/>
+		<arg name="control_args" value="0 0 0"/>
+	</include>
+	<include file="$(find resl_coverage)/launch/abstract_target_mission.launch">
+		<arg name="name" value="target1"/>
+		<arg name="control_args" value="-2 0 0"/>
+	</include>
+	<group ns="base_station_group">
+		<node pkg="resl_coverage" type="base_station.py" name="base_station" args="2 5" output="screen"/>
+	</group>
+</launch>

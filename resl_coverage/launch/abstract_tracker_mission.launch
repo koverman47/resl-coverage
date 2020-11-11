@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+
+  <arg name="name" default="quadrotor"/>
+  <arg name="control_args" default="0 0 5"/>
+  <arg name="track_args" default="1 1 1 1"/>
+
+  <group ns="$(arg name)">
+	  <node pkg="resl_coverage" type="quadrotor_controller.py" name="controller_$(arg name)" args="$(arg control_args)" output="screen"/>
+	  <node pkg="resl_coverage" type="tracker.py" name="tracker_$(arg name)" args="$(arg track_args)" output="screen"/>
+
+  </group>
+
+</launch>
