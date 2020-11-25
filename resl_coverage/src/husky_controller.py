@@ -79,10 +79,10 @@ def main():
             dt = t2 - t1
             t1 = t2
             vel = get_velocity(desired, state)
-            twist.linear.x = min(vel[0], 1.)
-            twist.linear.y = min(vel[1], 1.)
-            twist.angular.z = min(vel[2], 0.25)
-            pub_twist.publish(twist)
+            twist.linear.x = min(vel[0], 1., key=abs)
+            twist.linear.y = min(vel[1], 1., key=abs)
+            twist.angular.z = min(vel[2], 0.25, key=abs)
+            #pub_twist.publish(twist)
         rate.sleep()
 
 

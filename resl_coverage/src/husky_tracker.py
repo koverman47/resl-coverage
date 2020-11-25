@@ -41,6 +41,7 @@ target_twist_subs = []
 consensus_subs = []
 
 myid = None
+#irec = [False for i in range(num_trackers)]
 irec = {}
 information_q = {} # Update to dictionary
 information_W = {} # Update to dictionary
@@ -48,7 +49,7 @@ N = 1
 edges = []
 weight_matrix = None
 
-obs = [[None, None, None, None] for i in range(num_targets)]
+Z = [[None, None, None, None] for i in range(num_targets)]
 covariances = [np.dot(0.01, np.eye(4)) for i in range(num_targets)]
 estimates = [np.array([0., 0., 0., 0.]) for i in range(num_targets)]
 offset = [float(sys.argv[3]), float(sys.argv[4]), 5.]
@@ -62,20 +63,20 @@ R = None
 
 set_est = [[False, False] for i in range(num_targets)]
 def pose_callback(msg, args):
-    global obs, estimates, set_est, R
+    global Z, estimates, set_est, R
     noise = np.dot(R, np.random.random(4))
-    obs[args][0] = msg.pose.position.x + (noise[0] * 0.01)
-    obs[args][1] = msg.pose.position.y + (noise[1] * 0.01)
+    Z[args][0] = msg.pose.position.x + (noise[0] * 0.01)
+    Z[args][1] = msg.pose.position.y + (noise[1] * 0.01)
     if not set_est[args][0]:
         estimates[args][0] = msg.pose.position.x
         estimates[args][1] = msg.pose.position.y
         set_est[args][0] = True
 
 def twist_callback(msg, args):
-    global obs, estimates, set_est, R
+    global Z, estimates, set_est, R, U
     noise = np.dot(R, np.random.random(4))
-    obs[args][2] = msg.twist.linear.x + (noise[2] * 0.01)
-    obs[args][3] = msg.twist.linear.y + (noise[3] * 0.01)
+    Z[args][2] = msg.twist.linear.x + (noise[0] * 0.01)
+    Z[args][3] = msg.twist.linear.y + (noise[1] * 0.01)
 
     U[args][0] = msg.twist.linear.x
     U[args][1] = msg.twist.linear.y
@@ -137,10 +138,10 @@ def handle_process_noise(req):
 def handle_failure(req):
     global estimates, covariances
     global consensus_subs, edges
+    global num_targets
     edges = []
     consensus_subs = []
     irec = {}
-
 
     res = FailureResponse()
     inter_W = np.array([pinv(covariances[i]) for i in range(num_targets)])
@@ -160,6 +161,7 @@ def handle_state_request(req):
     res = StateResponse()
     res.state = np.array(estimates).flatten()
     return res
+
 
 def init_services():
     global name
@@ -216,10 +218,11 @@ def init_params():
     H = np.eye(4)
     R = np.eye(4)
 
+
 def track():
     global num_targets, num_trackers, myid
     global irec, q, W, information_q, information_W
-    global obs, offset, estimates, covariances
+    global Z, offset, estimates, covariances
     global A, B, U, Q, H, R
     global N, edges, node_weights
     global desired_pose, des_pub
@@ -251,12 +254,22 @@ def track():
         # update to center on group of targets
         q = []
         W = []
-        if all([ob[0] for ob in obs]):
-            # Update q & W
+        if all([z[0] for z in Z]):
+
             for i in range(num_targets):
-                z = np.array(obs[i])
-                q.append(np.dot(weight_matrix[myid][myid], np.dot(H.T, np.dot(pinv(R), z))))
-                W.append(np.dot(weight_matrix[myid][myid], np.dot(H.T, np.dot(pinv(R), H))))
+                A[0][2] = dt
+                A[1][3] = dt
+                #B[0][0] = dt / 2.
+                #B[1][1] = dt / 2.
+
+                z = np.array(Z[i])
+                x, P = kalman.step_known(estimates[i], covariances[i], U[i], z, B=B, A=A)
+                estimates[i] = x
+                covariances[i] = P
+
+                PI = pinv(P)
+                q.append(np.dot(weight_matrix[myid][myid], np.dot(PI, x)))
+                W.append(np.dot(weight_matrix[myid][myid], PI))
 
             # Publish q & W
             state_information.q = np.array(q).flatten()
@@ -280,23 +293,22 @@ def track():
                 for j in range(num_targets):
                     W[j] = W[j] + information_W[i][j]
                     q[j] = q[j] + information_q[i][j]
-            for i in range(num_targets):
-                W[i] = np.dot(1. / N, W[i])
-                q[i] = np.dot(1. / N, q[i])
             information_W = {}
             information_q = {}
 
             for i in range(num_targets):
-                A[0][2] = dt
-                A[1][3] = dt
+                OI = pinv(W[i])
+                for l in range(len(OI)):
+                    for j in range(len(OI[l])):
+                        if OI[l][j] < 0.:
+                            OI[l][j] = 0.
 
-                x, P = kalman.step_unknown(estimates[i], covariances[i], q[i], W[i], N+1, B=B, A=A)
-                estimates[i] = x
-                covariances[i] = P
- 
+                estimates[i] = np.dot(OI, q[i])
+                covariances[i] = OI
+
             desired_pose.pose.position.x = estimates[0][0] + offset[0]
             desired_pose.pose.position.y = estimates[0][1] + offset[1]
-            desired_pose.pose.position.z = max(estimates[0][2], 3.) + offset[2]
+            desired_pose.pose.position.z = max(offset[2], 3.)
             des_pub.publish(desired_pose)
 
             for e in edges:

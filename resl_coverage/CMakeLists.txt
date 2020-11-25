@@ -57,6 +57,7 @@ add_service_files(
 	TriggerFail.srv
 	Coordinates.srv
 	State.srv
+	Neighbors.srv
 )
 
 include_directories(

@@ -6,6 +6,10 @@
 
 import sys
 
+targets = int(sys.argv[1])
+trackers = int(sys.argv[2])
+rural = bool(int(sys.argv[3]))
+
 f = open("./launch/resl_simulation_spawn.launch", "w")
 l = open("./launch/resl_simulation_liftoff.launch", "w")
 f.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
@@ -13,17 +17,16 @@ l.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 f.write("<launch>\n")
 l.write("<launch>\n")
 f.write("\t<arg name=\"launch_unity\" default=\"true\"/>\n")
-#f.write("\t<arg name=\"simulator_param_file\" default=\"$(find arl_unity_ros)/config/overpasscity.yaml\" />\n\n")
-f.write("\t<arg name=\"simulator_param_file\" default=\"$(find arl_unity_ros)/config/floodedgrounds.yaml\" />\n\n")
+if rural:
+    f.write("\t<arg name=\"simulator_param_file\" default=\"$(find arl_unity_ros)/config/floodedgrounds.yaml\" />\n\n")
+else:
+    f.write("\t<arg name=\"simulator_param_file\" default=\"$(find arl_unity_ros)/config/basic_environment.yaml\" />\n\n")
 f.write("\t<include file=\"$(find arl_unity_ros)/launch/simulator.launch\">\n")
 f.write("\t\t<arg name=\"launch_unity\" value=\"$(arg launch_unity)\"/>\n")
 f.write("\t\t<arg name=\"param_file\" value=\"$(arg simulator_param_file)\"/>\n")
 f.write("\t</include>\n\n")
 f.write("\t<arg name=\"quadrotor_description\" default=\"$(find arl_unity_ros_abstract)/config/quadrotor.yaml\"/>\n\n")
 f.write("\t<arg name=\"husky_description\" default=\"$(find arl_unity_ros_abstract)/config/husky.yaml\"/>\n\n")
-
-targets = int(sys.argv[1])
-trackers = int(sys.argv[2])
 
 # Trackers
 x = str(0)

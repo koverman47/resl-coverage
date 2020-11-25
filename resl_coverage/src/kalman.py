@@ -9,7 +9,7 @@ class Kalman():
         self.H = H
         self.Q = Q
         self.R = R
-        self.I = np.eye(6)
+        self.I = np.eye(4)
 
     def step_unknown(self, x, P, q, W, N, A=None, B=None, H=None, Q=None, R=None, pr=False):
         if A is None: A = self.A
@@ -25,7 +25,8 @@ class Kalman():
         pred_P = np.dot(A, np.dot(P, A.T)) + np.dot(N, Q)
         pred_x = np.dot(A, x)
 
-        #if pr:
+        if pr:
+            print("pred_x", pred_x)
         #    print("Pred_P")
         #    print(pred_P)
 
@@ -63,16 +64,17 @@ class Kalman():
                         - np.dot(pred_P, np.dot(theta_big, Y))
 
         if pr:
-            print("pred_P")
-            print(pred_P)
+            print("pred_x_star", pred_x_star)
+        #    print("pred_P")
+        #    print(pred_P)
         #    print("Y x TB x pred_P")
         #    print(np.dot(Y, np.dot(theta_big, pred_P)))
         #    print("pred_P x TB x Y")
         #    print(np.dot(pred_P, np.dot(theta_big, Y)))
         #    print("Y x TB")
         #    print(np.dot(Y, theta_big))
-            print("pred_P_star") 
-            print(pred_P_star)
+        #    print("pred_P_star") 
+        #    print(pred_P_star)
         #    print("Pred_P")
         #    print("P x t x T")
         #    print(np.dot(pred_P, theta_lit - np.dot(theta_big, pred_x_star)))
@@ -80,6 +82,8 @@ class Kalman():
         # Correction
         xc = pred_x_star + np.dot(pred_P,
                 theta_lit - np.dot(theta_big, pred_x_star))
+        if pr:
+            print("XC", xc)
         Pc = np.dot(self.I - np.dot(pred_P, theta_big),
                 pred_P_star - np.dot(pred_P, np.dot(theta_big, Y)))
 

@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+########################################
+# Arg 1 : Targets
+# Arg 2 : Trackers
+#
+# To engage dynamics use -d, --dynamics
+########################################
+DYNAMICS=false
+BUILD=false
+QUAD_TARGET=false
+RURAL=0
+HELP=false
+
+if [ $# -ge 2 ]
+then
+	for i in "$@"
+	do
+		case $i in
+			-b|--build)
+				BUILD=true
+			;;
+			-q|--quad)
+				QUAD_TARGET=true
+			;;
+			-r|--rural)
+				RURAL=1
+			;;
+			-h|--help)
+				HELP=true
+			;;
+		esac
+	done
+else
+	HELP=true
+fi
+
+if $HELP
+then
+	echo "Usage: resl.sh <num_targets> <num_trackers> <options>
+		
+Options:
+  -h, --help  : help string
+  -b, --build : build ROS workspace
+  -q, --quad  : set targets to quadrotors
+  -r, --rural : set scene to floodedgrounds
+"
+else
+	if $QUAD_TARGET
+	then
+		python generate_sim_quadrotor.py $1 $2 $RURAL 
+	else
+		python generate_sim_husky.py $1 $2 $RURAL
+	fi
+
+	if $BUILD
+	then
+		catkin build
+		source ../../../devel/setup.bash
+	fi
+	roslaunch resl_coverage resl_simulation_spawn.launch
+fi

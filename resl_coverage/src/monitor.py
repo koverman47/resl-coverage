@@ -5,6 +5,7 @@ import numpy as np
 import networkx as nx
 from time import time
 from kalman import Kalman
+from detector import Detector
 from numpy.linalg import pinv
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from resl_coverage.msg import MultiStateEstimate
@@ -14,6 +15,7 @@ from resl_coverage.srv import Failure, FailureResponse
 from resl_coverage.srv import Coordinates, CoordinatesResponse
 from resl_coverage.srv import TriggerFail, TriggerFailResponse
 from resl_coverage.srv import State, StateResponse
+from resl_coverage.srv import Neighbors, NeighborsRequest
 
 num_targets = int(sys.argv[1])
 num_trackers = int(sys.argv[2])
@@ -25,10 +27,15 @@ des_offset_res = None
 topology_res = None
 trigger_fail_res = None
 state_res = None
+neighbors_service = None
+
+# Declare Service Objects
+neighbors_req = None
 
 # Declare Message Objects
 state_information = None
 desired_pose = None
+tracker_sub = [0., 0., 0.]
 
 # Declare Publishers
 des_pub = None
@@ -36,6 +43,7 @@ information_pub = None
 
 # Declare Subscribers
 offset_sub = None
+tracker_pose_sub = None
 target_pose_subs = []
 target_twist_subs = []
 consensus_subs = []
@@ -48,7 +56,7 @@ N = 1
 edges = []
 weight_matrix = None
 
-obs = [[None, None, None, None] for i in range(num_targets)]
+obs = {i:[None, None, None, None] for i in range(num_targets)}
 covariances = [np.dot(0.01, np.eye(4)) for i in range(num_targets)]
 estimates = [np.array([0., 0., 0., 0.]) for i in range(num_targets)]
 offset = [float(sys.argv[3]), float(sys.argv[4]), 5.]
@@ -90,6 +98,11 @@ def offset_callback(msg):
     offset[1] = msg.pose.position.y
     offset[2] = msg.pose.position.z
 
+def tracker_pose_callback(msg):
+    global tracker_pose
+    p = msg.pose.position
+    tracker_pose = [p.x, p.y, p.z]
+
 def information_callback(msg):
     global irec, information_q, information_W
     global num_targets
@@ -100,11 +113,17 @@ def information_callback(msg):
 def handle_topology(req):
     global edges, weight_matrix, N
     global num_trackers
-    global irec, myid
+    global irec, myid, name
+    global neighbors_service, neighbors_req
 
     edges = req.edges
     for e in edges:
         irec[e] = False
+
+    rospy.wait_for_service(name+'neighbors')
+    #neighbors_req.neighbors = edges
+    neighbors_req.neighbors = [i for i in range(num_trackers) if i != myid]
+    neighbors_service(neighbors_req)
 
     N = len(edges)
     weight_matrix = np.array(req.weight_matrix).reshape((num_trackers, num_trackers))
@@ -141,7 +160,6 @@ def handle_failure(req):
     consensus_subs = []
     irec = {}
 
-
     res = FailureResponse()
     inter_W = np.array([pinv(covariances[i]) for i in range(num_targets)])
     res.W = inter_W.flatten()
@@ -166,6 +184,7 @@ def init_services():
     global process_noise_res, failure_res
     global des_offset_res, topology_res
     global trigger_fail_res, state_res
+    global neighbors_service, neighbors_req
 
     topology_res = rospy.Service(name+'topology', Topology, handle_topology)
     des_offset_res = rospy.Service(name+'desired_offsets', Coordinates, handle_offsets)
@@ -173,6 +192,11 @@ def init_services():
     failure_res = rospy.Service(name+'failure', Failure, handle_failure)
     trigger_fail_res = rospy.Service(name+'trigger_fail', TriggerFail, handle_trigger_fail)
     state_res = rospy.Service(name+'state_estimate', State, handle_state_request)
+    
+    rospy.wait_for_service(name+'neighbors')
+    neighbors_req = NeighborsRequest()
+    neighbors_service = rospy.ServiceProxy(name+'neighbors', Neighbors)
+
 
 def init_messages():
     global name
@@ -190,8 +214,10 @@ def init_messages():
 
     # Subscription
     global offset_sub, target_pose_subs
-    global target_twist_subs
+    global target_twist_subs, tracker_pose_sub
     offset_sub = rospy.Subscriber(name+'offset', PoseStamped, offset_callback)
+    tracker_pose_sub = rospy.Subscriber('/unity_command'+name+'TrueState/pose',
+                            PoseStamped, tracker_pose_callback)
     for i in range(num_targets):
         target_pose_subs.append(
                 rospy.Subscriber('/unity_command/target'+str(i)+'/TrueState/pose', 
@@ -224,6 +250,7 @@ def track():
     global N, edges, node_weights
     global desired_pose, des_pub
     global information_pub, state_information
+    global tracker_pose
 
     rospy.init_node(name[1:-1] + '_tracking')
 
@@ -233,12 +260,13 @@ def track():
     
     # Init Kalman Object
     kalman = Kalman(A, B, H, Q, R)
+    detector = Detector(3.141592654 / 2.)
 
     # Init time
     t1 = time()
     dt = 0.
 
-    rospy.sleep(2)
+    rospy.sleep(5)
     rate = rospy.Rate(10)
     while not rospy.is_shutdown():
         while not edges:
@@ -251,7 +279,8 @@ def track():
         # update to center on group of targets
         q = []
         W = []
-        if all([ob[0] for ob in obs]):
+        if all([ob[0] for k, ob in obs.items()]):
+            obs = detector.get_detections(tracker_pose, obs, get_all=True)
             # Update q & W
             for i in range(num_targets):
                 z = np.array(obs[i])

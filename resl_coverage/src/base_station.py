@@ -14,9 +14,6 @@ from resl_coverage.srv import Coordinates, CoordinatesRequest
 from resl_coverage.srv import State, StateRequest
 from resl_coverage.msg import StateEstimate
 
-#from optimization_utils_dkf import *
-#from reconfig_utils_dkf import *
-
 num_targets = int(sys.argv[1])
 num_trackers = int(sys.argv[2])
 
@@ -157,6 +154,7 @@ def monitor():
 
     for i in range(1, num_trackers):
         G.add_edge(i - 1, i)
+    G.add_edge(num_trackers - 1, 0)
     gen_graph()
 
     # Send initial Graph Data
@@ -165,9 +163,9 @@ def monitor():
         topology_req.edges = list(G.neighbors(i))
         topology_services[i](topology_req)
 
-    r = 10.
+    r = 5.
     c = [0., 0.]
-    a = 15.
+    a = 10.
     while not target:
         pass
     for i in range(num_trackers):

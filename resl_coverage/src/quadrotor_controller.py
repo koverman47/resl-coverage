@@ -3,16 +3,22 @@
 import sys
 import rospy
 import rospkg
-from geometry_msgs.msg import PoseStamped, Twist
-from tf.transformations import euler_from_quaternion
 from time import time, sleep
+from tf.transformations import euler_from_quaternion
+from geometry_msgs.msg import PoseStamped, Twist
+from resl_coverage.srv import Neighbors, NeighborsResponse
 
 name = None
+myid = None
 state = None
 status = None
 t1 = None
 desired = None
 kp = 0.75
+
+neighbors_sub = []
+neighbors = {}
+
 
 '''
 ' Update State from unity pose publisher
@@ -37,6 +43,23 @@ def desired_callback(msg):
     desired[1] = msg.pose.position.y
     desired[2] = max(msg.pose.position.z, 3.)
 
+def neighbors_state_callback(msg, arg):
+    global neighbors
+    p = msg.pose.position
+    neighbors[arg] = [p.x, p.y, p.z]
+
+
+def handle_neighbors_request(req):
+    global neighbors_sub, name
+    for n in req.neighbors:
+        neighbors_sub.append(
+                rospy.Subscriber('/unity_command/tracker'+str(n)+'/TrueState/pose',
+                    PoseStamped, neighbors_state_callback, n))
+    
+    res = NeighborsResponse()
+    res.rec = True
+    return res
+
 def get_velocity(d, x):
     global kp
     v = []
@@ -48,13 +71,30 @@ def get_velocity(d, x):
     v.append(-kp * (x[5] - d[5]))
     return v
 
+def check_no_collision(state):
+    global neighbors, myid
+
+    for k, v in neighbors.items():
+        if k < myid:
+            continue
+
+        dx = state[0] - v[0]
+        dy = state[1] - v[1]
+        dz = state[2] - v[2]
+        if (dx**2 + dy**2 + dz**2) < 4:
+            return False 
+    return True
+
 def main():
-    global state, name, t1, desired
+    global state, name, t1, desired, myid
+    myid = int(name[1:-1].replace('tracker', ''))
     t1 = time()
     desired = [0, 2, 5, 0, 0, 0]
     desired[0] = float(sys.argv[1])
     desired[1] = float(sys.argv[2])
     desired[2] = float(sys.argv[3])
+
+    neighbors_res = rospy.Service(name+'neighbors', Neighbors, handle_neighbors_request)
 
     sub_pose = rospy.Subscriber('/unity_command'+name+'TrueState/pose', PoseStamped, state_callback)
     sub_des = rospy.Subscriber(name+'desired_pose', PoseStamped, desired_callback)
@@ -68,12 +108,25 @@ def main():
             dt = t2 - t1
             t1 = t2
             vel = get_velocity(desired, state)
-            twist.linear.x = min(vel[0], 2.)
-            twist.linear.y = min(vel[1], 2.)
-            twist.linear.z = min(vel[2], 2.)
-            twist.angular.x = min(vel[3], 0.25)
-            twist.angular.y = min(vel[4], 0.25)
-            twist.angular.z = min(vel[5], 0.25)
+            myid = int(name[1:-1].replace('tracker', ''))
+            #print(myid, vel)
+            alts = []
+            for i in range(3):
+                alts.append( 1.5 * vel[i] / abs(vel[i]) if vel[i] else 0.)
+            for i in range(3, 6):
+                alts.append( 0.2 * vel[i] / abs(vel[i]) if vel[i] else 0.)
+
+            if check_no_collision(state):
+                twist.linear.x = min(vel[0], alts[0], key=abs)
+                twist.linear.y = min(vel[1], alts[1], key=abs)
+                twist.linear.z = min(vel[2], alts[2], key=abs)
+            else:
+                twist.linear.x = 0.
+                twist.linear.y = 0.
+                twist.linear.z = 0.
+            twist.angular.x = min(vel[3], alts[3], key=abs)
+            twist.angular.y = min(vel[4], alts[4], key=abs)
+            twist.angular.z = min(vel[5], alts[5], key=abs)
             pub_twist.publish(twist)
         rate.sleep()
 
