@@ -72,4 +72,14 @@
 		<arg name="pitch" value="0"/>
 		<arg name="yaw" value="0"/>
 	</include>
+	<include file="$(find resl_coverage)/launch/abstract_husky.launch">
+		<arg name="name" value="target1"/>
+		<arg name="description" value="$(arg husky_description)" />
+		<arg name="x" value="-2"/>
+		<arg name="y" value="0"/>
+		<arg name="z" value="0.4"/>
+		<arg name="roll" value="0"/>
+		<arg name="pitch" value="0"/>
+		<arg name="yaw" value="0"/>
+	</include>
 </launch>

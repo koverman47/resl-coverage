@@ -338,7 +338,7 @@ def track():
             #    print("after", tw)
             #wz = ob_rec + z_rec
             sigs = [0 for i in range(num_targets)]
-            print(ob_rec)
+            #print(ob_rec)
             for j in range(num_targets):
                 wz = {i: ob_rec[i][j] for i in edges} #+ [z_rec[j]]
                 wz[myid] = z_rec[j]
