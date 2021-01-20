@@ -1,2 +1,3 @@
 int8 id
-float32[4] state
+geometry_msgs/Pose pose
+geometry_msgs/Twist twist

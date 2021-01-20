@@ -62,6 +62,7 @@ obs = {i:[None, None, None, None] for i in range(num_targets)}
 covariances = [np.dot(0.01, np.eye(4)) for i in range(num_targets)]
 estimates = [np.array([0., 0., 0., 0.]) for i in range(num_targets)]
 offset = [float(sys.argv[3]), float(sys.argv[4]), 5.]
+meas = [False for i in range(num_targets)]
 
 A = None
 B = None
@@ -177,9 +178,10 @@ def handle_trigger_fail(req):
     return res
 
 def handle_state_request(req):
-    global estimates
+    global estimates, meas
     res = StateResponse()
     res.state = np.array(estimates).flatten()
+    res.measured = meas
     return res
 
 def init_services():
@@ -250,7 +252,7 @@ def track():
     global irec, q, W, information_q, information_W
     global obs, offset, estimates, covariances
     global A, B, U, Q, H, R
-    global N, edges, node_weights, ob_rec
+    global N, edges, node_weights, ob_rec, meas
     global desired_pose, des_pub
     global information_pub, state_information
     global tracker_pose
@@ -293,11 +295,13 @@ def track():
             for i in range(num_targets):
                 z = None
                 if not z_rec[i]:
+                    meas[i] = False
                     #z_rec.append(False)
                     z = [0., 0., 0., 0.]
                     q.append(np.dot(0., np.dot(H.T, np.dot(pinv(R), z))))
                     W.append(np.dot(0., np.dot(H.T, np.dot(pinv(R), H))))
                 else:
+                    meas[i] = True
                     #z_rec.append(True)
                     z = np.array(obs[i])
                     q.append(np.dot(H.T, np.dot(pinv(R), z)))

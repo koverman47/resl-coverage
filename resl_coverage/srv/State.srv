@@ -1,3 +1,4 @@
 bool sent
 ---
 float32[] state
+bool[] measured

@@ -3,6 +3,7 @@
 import sys
 import rospy
 import time
+from random import randint
 from math import sqrt
 from geometry_msgs.msg import PoseStamped
 
@@ -45,7 +46,7 @@ def initialize():
 
     pose_sub = rospy.Subscriber('/unity_command'+name+'TrueState/pose',
             PoseStamped, pose_callback)
-    des_sub = rospy.Subscriber('tracker0/desired_pose', PoseStamped, tracker_callback)
+    des_sub = rospy.Subscriber('/tracker0/desired_pose', PoseStamped, tracker_callback)
     
     des_pub = rospy.Publisher(name+'desired_pose', PoseStamped, queue_size=1)
     desired_pose = PoseStamped()
@@ -63,14 +64,26 @@ def mission():
     desired_pose.pose.position.y = in_y
     desired_pose.pose.orientation.z = in_yaw
 
+    bl = -6
+    bu = 6
     waypoints = []
-    #waypoints.append([0., 0., 0.])
-    #waypoints.append([2., 2., 0.])
-    #waypoints.append([2., 0., 0.])
+    waypoints.append([randint(bl, bu), randint(bl, bu), 0])
+    waypoints.append([randint(bl, bu), randint(bl, bu), 0])
+    waypoints.append([randint(bl, bu), randint(bl, bu), 0])
+    waypoints.append([randint(bl, bu), randint(bl, bu), 0])
+    waypoints.append([randint(bl, bu), randint(bl, bu), 0])
+    waypoints.append([randint(bl, bu), randint(bl, bu), 0])
+    waypoints.append([randint(bl, bu), randint(bl, bu), 0])
+    waypoints.append([randint(bl, bu), randint(bl, bu), 0])
+    waypoints.append([randint(bl, bu), randint(bl, bu), 0])
+    waypoints.append([randint(bl, bu), randint(bl, bu), 0])
+    waypoints.append([randint(bl, bu), randint(bl, bu), 0])
+    waypoints.append([randint(bl, bu), randint(bl, bu), 0])
 
     while not trackers_started:
         pass
     des_sub.unregister()
+    print('trackers started')
 
     stability = 0
     rate = rospy.Rate(10)
@@ -79,7 +92,7 @@ def mission():
             stability += 1
         else:
             stability = 0
-        if distance(desired_pose, pose) < tolerance and waypoints and stability > 50:
+        if distance(desired_pose, pose) < tolerance and waypoints and stability > 1:
             wp = waypoints.pop()
             desired_pose.pose.position.x = wp[0] + in_x
             desired_pose.pose.position.y = wp[1] + in_y

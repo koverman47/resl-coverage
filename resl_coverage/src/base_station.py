@@ -181,24 +181,34 @@ def monitor():
     rate = rospy.Rate(10)
     while not rospy.is_shutdown():
         states = {}
+        meas = {}
         for i in range(num_trackers):
             state = state_services[i](state_req)
+            meas[i] = state.measured
             states[i] = np.array(state.state).reshape((num_targets, 4))
 
         SE = StateEstimate()
         state = [[0. for i in range(4)] for i in range(num_targets)]
         for i in range(num_targets):
+            count_z = 0.
             for j in range(num_trackers):
-                state[i][0] += states[j][i][0]
-                state[i][1] += states[j][i][1]
-                state[i][2] += states[j][i][2]
-                state[i][3] += states[j][i][3]
-            SE.state[0] = state[i][0] / num_trackers
-            SE.state[1] = state[i][1] / num_trackers
-            SE.state[2] = state[i][2] / num_trackers
-            SE.state[3] = state[i][3] / num_trackers
-            SE.id = i
-            state_pub.publish(SE)
+                if meas[j][i]:
+                    count_z += 1
+                    state[i][0] += states[j][i][0]
+                    state[i][1] += states[j][i][1]
+                    state[i][2] += states[j][i][2]
+                    state[i][3] += states[j][i][3]
+            if count_z > 0:
+                #SE.state[0] = state[i][0] / count_z # num_trackers
+                #SE.state[1] = state[i][1] / count_z
+                #SE.state[2] = state[i][2] / count_z
+                #SE.state[3] = state[i][3] / count_z
+                SE.pose.position.x = state[i][0]
+                SE.pose.position.y = state[i][1]
+                SE.twist.linear.x = state[i][2]
+                SE.twist.linear.y = state[i][3]
+                SE.id = i
+                state_pub.publish(SE)
 
         rate.sleep()
 
