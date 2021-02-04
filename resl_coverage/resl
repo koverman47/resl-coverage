@@ -37,7 +37,7 @@ fi
 
 if $HELP
 then
-	echo "Usage: resl.sh <num_targets> <num_trackers> <options>
+	echo "Usage: bash resl <num_targets> <num_trackers> <options>
 		
 Options:
   -h, --help  : help string
