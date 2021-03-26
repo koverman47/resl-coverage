@@ -97,7 +97,7 @@ def mission():
             desired_pose.pose.position.x = wp[0] + in_x
             desired_pose.pose.position.y = wp[1] + in_y
             desired_pose.pose.orientation.z = wp[2] + in_yaw
-            print("New Waypoint, wp")
+            print("New Waypoint", wp)
         des_pub.publish(desired_pose)
         rate.sleep()
 

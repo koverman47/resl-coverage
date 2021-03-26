@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from time import time
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from resl_coverage.msg import StateEstimate
+from math import sqrt
 
 num_targets = int(sys.argv[1])
 num_trackers = int(sys.argv[2])
@@ -32,7 +33,8 @@ def true_twist_callback(msg):
 def estimate_callback(msg):
     global estimate, update
     if msg.id == 0:
-        estimate = msg.state
+        estimate = [msg.pose.position.x, msg.pose.position.y,
+                    msg.twist.linear.x, msg.twist.linear.y] 
         update[2] = True
 
 
@@ -40,15 +42,12 @@ def record():
     rospy.init_node('resl_recorder')
 
     # Initialize Subscribers
-    pose_sub = rospy.Subscriber('/unity_command/target0/TrueState/pose',
-            PoseStamped, true_pose_callback)
-    twist_sub = rospy.Subscriber('/unity_command/target0/TrueState/twist',
-            TwistStamped, true_twist_callback)
+    pose_sub = rospy.Subscriber('/unity_command/target0/TrueState/pose', PoseStamped, true_pose_callback)
+    twist_sub = rospy.Subscriber('/unity_command/target0/TrueState/twist', TwistStamped, true_twist_callback)
+    estimate_sub = rospy.Subscriber('/target_estimates', StateEstimate, estimate_callback)
 
-    estimate_sub = rospy.Subscriber('/target_estimates',
-            StateEstimate, estimate_callback)
+    # plt.ylim(ymin=0, ymax=1) # If MSE is large we will get a blank plot
 
-    plt.ylim(ymin=0, ymax=1)
     plt.xlabel('Time')
     plt.ylabel('Squared Error')
     plt.title('Estimation Error')
@@ -65,20 +64,23 @@ def record():
             epy = abs(truth[1] - estimate[1])
             evx = abs(truth[2] - estimate[2])
             evy = abs(truth[3] - estimate[3])
-            mse = (epx**2 + epy**2 + evx**2 + evy**2)
+            mse = sqrt((epx**2 + epy**2 + evx**2 + evy**2))
             ti = time()
+            
+            print("truth_x:{}, est_x:{}".format(truth[0],estimate[0]))
+            print("truth_y:{}, est_y:{}".format(truth[1],estimate[1]))
+
             rx.append(ti - t0)
             ry.append(mse)
-            #plt.scatter(ti - t0, mse)
             plt.plot(rx, ry, color='blue')
             plt.pause(0.05)
 
             f.write("%d,%s,t\n" % (counter, ",".join(map(str, truth))))
-            f.write("%d,%s,e\n" % (counter, ",".join(map(str, estimate)))) 
+            f.write("%d,%s,e\n" % (counter, ",".join(map(str, estimate))))
 
             update = [False, False, False]
             counter += 1
-    
+
         rate.sleep()
 
     plt.show()
