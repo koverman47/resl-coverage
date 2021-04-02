@@ -25,13 +25,13 @@ class Kalman():
 
         ---------------------------------
         This algo is based on papers below:
-        [1] A. Esna Ashari, A. Y. Kibangou, and F. Garin, “Distributed input and
-            state estimation for linear discrete-time systems,” in 2012 IEEE 51st
-            IEEE Conference on Decision and Control (CDC), 2012, pp. 782–787.
+        [1] A. Esna Ashari, A. Y. Kibangou, and F. Garin, "Distributed input and
+            state estimation for linear discrete-time systems," in 2012 IEEE 51st
+            IEEE Conference on Decision and Control (CDC), 2012, pp. 782-787.
 
-        [2] S. Gillijns and B. De Moor, “Unbiased minimum-variance input and
-            state estimation for linear discrete-time systems,” Automatica, vol. 43,
-            no. 1, pp. 111–116, 2007.
+        [2] S. Gillijns and B. De Moor, "Unbiased minimum-variance input and
+            state estimation for linear discrete-time systems," Automatica, vol. 43,
+            no. 1, pp. 111-116, 2007.
         ---------------------------------
 
         Args:
