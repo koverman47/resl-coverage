@@ -36,7 +36,8 @@ class GridMap:
         self.left_lower_y = self.center_y - self.height / 2.0 * self.resolution
 
         self.ndata = self.width * self.height
-        self.data = np.ones(self.ndata)*init_val
+        # Remove this will save tons of memory
+        # self.data = np.ones(self.ndata)*init_val
 
     def get_value_from_xy_index(self, x_ind, y_ind):
         """get_value_from_xy_index

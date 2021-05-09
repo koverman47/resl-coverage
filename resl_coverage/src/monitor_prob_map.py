@@ -20,11 +20,11 @@ from resl_coverage.srv import Neighbors, NeighborsRequest
 from prob_map import ProbMap
 import matplotlib.pyplot as plt
 # build a grid map
-#           |--size: 10m x 10m
+#           |--size: 100m x 100m
 #           |--resolution: 0.1m
 #           |--center coordinates: [0.0m, 0.0m]
 #           |--default grid value: 0.1
-prob_map = ProbMap(width_meter=20, height_meter=20, resolution=0.1,
+prob_map = ProbMap(width_meter=100, height_meter=100, resolution=0.1,
                    center_x=0.0, center_y=0.0, init_val=0.1, 
                    false_alarm_prob=0.1)
 
@@ -288,11 +288,11 @@ def track():
             prob_map.map_update(obs)
 
             # Plot the prob map
-            grid_data = np.reshape(
-                np.array(prob_map.data), (prob_map.height, prob_map.width))
+            # grid_data = np.reshape(np.array(prob_map.data), (prob_map.height, prob_map.width))
             plt.clf()
-            plt.pcolor(grid_data, cmap="Blues", vmin=0.0, vmax=1.0)
-            plt.axis("equal")
+            for ind, value in prob_map.non_empty_cell.items():
+                plt.scatter(ind[0], ind[1],  s=value*10, c = 'r')
+            plt.axis([0, prob_map.width, 0, prob_map.height],"equal")
             plt.draw()
             plt.pause(0.01)
 
