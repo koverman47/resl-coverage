@@ -20,17 +20,21 @@ from resl_coverage.srv import Neighbors, NeighborsRequest
 from prob_map import ProbMap
 import matplotlib.pyplot as plt
 # build a grid map
-#           |--size: 100m x 100m
+#           |--size: 20m x 20m
 #           |--resolution: 0.1m
 #           |--center coordinates: [0.0m, 0.0m]
 #           |--default grid value: 0.1
-prob_map = ProbMap(width_meter=100, height_meter=100, resolution=0.1,
+width_meter = 50
+height_meter = 50
+resolution = 0.2
+prob_map = ProbMap(width_meter, height_meter, resolution,
                    center_x=0.0, center_y=0.0, init_val=0.1, 
                    false_alarm_prob=0.1)
 
 # Show the dynamic prob map picture
 plt.ion()
 plt.plot()
+
 
 num_targets = int(sys.argv[1])
 num_trackers = int(sys.argv[2])
@@ -284,15 +288,28 @@ def track():
             obs, z_rec = detector.get_detections(
                 tracker_pose, obs, get_all=False, pr=False, prob=True)
 
-            # use observed data to update the prob map
-            prob_map.map_update(obs)
+            # build a real_obs dict which doesn't contain unvisible targets
+            real_obs = dict()
+            for i in range(len(z_rec)):
+                if z_rec[i]:
+                    real_obs[i] = obs[i]
+
+            # use real observation data to update the prob map
+            prob_map.map_update(real_obs)
 
             # Plot the prob map
             # grid_data = np.reshape(np.array(prob_map.data), (prob_map.height, prob_map.width))
             plt.clf()
             for ind, value in prob_map.non_empty_cell.items():
-                plt.scatter(ind[0], ind[1],  s=value*10, c = 'r')
-            plt.axis([0, prob_map.width, 0, prob_map.height],"equal")
+                plt.scatter(ind[0], ind[1], s=np.arctan(value)*10, c = 'r')
+                if value>=0.5:
+                    plt.annotate(round(value,2), ind)
+            plt.axis([0, prob_map.width, 0, prob_map.height], "equal")
+            plt.title("Tracker"+str(myid))
+            plt.grid()
+            # regenerate the lables of x, y
+            plt.xticks(np.arange(0, width_meter/resolution,5/resolution), np.arange(-width_meter/2, width_meter/2, 5))
+            plt.yticks(np.arange(0, height_meter/resolution,5/resolution), np.arange(-height_meter/2, height_meter/2, 5))
             plt.draw()
             plt.pause(0.01)
 
