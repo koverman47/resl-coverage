@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from math import tan
-from random import gauss
+from numpy.random import normal
 
 import rospy
 
@@ -32,7 +32,8 @@ class Detector():
                 xp = v[0]
                 yp = v[1]
                 # Generate a random confidence with gaussian distribution
-                measurement_confidence = gauss(0.85, 0.1)
+                cutOff = lambda x : 1e-6 if x<=1e-6 else 1-1e-6 if x>= 1-1e-6 else x
+                measurement_confidence = cutOff(normal(0.85, 0.1))
                 d = (xp - xc)**2 + (yp - yc)**2
                 # Check if the target is in the tracker's vision
                 if d < r2: 

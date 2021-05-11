@@ -31,10 +31,6 @@ prob_map = ProbMap(width_meter, height_meter, resolution,
                    center_x=0.0, center_y=0.0, init_val=0.1,
                    false_alarm_prob=0.1)
 
-# Show the dynamic prob map picture
-plt.ion()
-plt.plot()
-
 
 num_targets = int(sys.argv[1])
 num_trackers = int(sys.argv[2])
@@ -80,20 +76,6 @@ def pose_callback(msg, args):
         estimates[args][0] = msg.pose.position.x
         estimates[args][1] = msg.pose.position.y
         set_est[args][0] = True
-
-
-# def twist_callback(msg, args):
-#     global obs, estimates, set_est, R
-#     noise = np.dot(R, np.random.random(4))
-#     obs[args][2] = msg.twist.linear.x + (noise[2] * 0.01)
-#     obs[args][3] = msg.twist.linear.y + (noise[3] * 0.01)
-
-#     U[args][0] = msg.twist.linear.x
-#     U[args][1] = msg.twist.linear.y
-#     if not set_est[args][1]:
-#         estimates[args][2] = msg.twist.linear.x
-#         estimates[args][3] = msg.twist.linear.y
-#         set_est[args][1] = True
 
 
 def offset_callback(msg):
@@ -263,7 +245,7 @@ def init_services():
     neighbors_service = rospy.ServiceProxy(name+'neighbors', Neighbors)
 
 
-def track():
+def track(plot_map = 0):
     global num_targets, num_trackers, myid
     global irec, q, W, information_q, information_W
     global obs, offset, estimates, covariances
@@ -273,6 +255,11 @@ def track():
     global information_pub, state_information
     global tracker_pose
     global prob_map
+    
+    if plot_map:
+        # Plot the dynamic prob map
+        plt.ion()
+        plt.plot()
 
     rospy.init_node(name[1:-1] + '_tracking')
 
@@ -296,25 +283,27 @@ def track():
 
             # use real observation data to update the prob map
             prob_map.map_update(real_obs)
-
-            # Plot the prob map
-            # grid_data = np.reshape(np.array(prob_map.data), (prob_map.height, prob_map.width))
-            plt.clf()
-            for ind, value in prob_map.non_empty_cell.items():
-                plt.scatter(ind[0], ind[1], s=round(np.arctan(value)*10,2), c='r')
-                plt.annotate(round(value, 2), ind)
-                # if value>=0.5:
-                #     plt.annotate(round(value,2), ind)
-            plt.axis([0, prob_map.width, 0, prob_map.height], "equal")
-            plt.title("Tracker"+str(myid))
-            plt.grid()
-            # regenerate the lables of x, y
-            plt.xticks(np.arange(0, width_meter/resolution, 5/resolution),
-                       np.arange(-width_meter/2, width_meter/2, 5))
-            plt.yticks(np.arange(0, height_meter/resolution, 5/resolution),
-                       np.arange(-height_meter/2, height_meter/2, 5))
-            plt.draw()
-            plt.pause(0.01)
+            
+            #####################
+            # Plot the Prob map #
+            #####################
+            if plot_map:
+                plt.clf()
+                for ind, value in prob_map.non_empty_cell.items():
+                    plt.scatter(ind[0], ind[1], s=round(np.arctan(value)*20,2), c='r')
+                    # plt.annotate(round(value, 2), ind)
+                    # if value>=0.5:
+                    #     plt.annotate(round(value,2), ind)
+                plt.axis([0, prob_map.width, 0, prob_map.height], "equal")
+                plt.title("Tracker"+str(myid))
+                plt.grid(alpha = 0.1)
+                # regenerate the labels of x, y
+                plt.xticks(np.arange(0, width_meter/resolution, 5/resolution),
+                        np.arange(-width_meter/2, width_meter/2, 5))
+                plt.yticks(np.arange(0, height_meter/resolution, 5/resolution),
+                        np.arange(-height_meter/2, height_meter/2, 5))
+                plt.draw()
+                plt.pause(0.01)
 
             # Move trackers to the position
             desired_pose.pose.position.x = offset[0]
@@ -330,6 +319,6 @@ if __name__ == "__main__":
         init_params()
         init_services()
         init_messages()
-        track()
+        track(plot_map=1)
     except rospy.ROSInterruptException:
         pass
