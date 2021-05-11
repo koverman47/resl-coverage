@@ -28,7 +28,7 @@ width_meter = 50
 height_meter = 50
 resolution = 0.2
 prob_map = ProbMap(width_meter, height_meter, resolution,
-                   center_x=0.0, center_y=0.0, init_val=0.1, 
+                   center_x=0.0, center_y=0.0, init_val=0.1,
                    false_alarm_prob=0.1)
 
 # Show the dynamic prob map picture
@@ -301,15 +301,18 @@ def track():
             # grid_data = np.reshape(np.array(prob_map.data), (prob_map.height, prob_map.width))
             plt.clf()
             for ind, value in prob_map.non_empty_cell.items():
-                plt.scatter(ind[0], ind[1], s=np.arctan(value)*10, c = 'r')
-                if value>=0.5:
-                    plt.annotate(round(value,2), ind)
+                plt.scatter(ind[0], ind[1], s=round(np.arctan(value)*10,2), c='r')
+                plt.annotate(round(value, 2), ind)
+                # if value>=0.5:
+                #     plt.annotate(round(value,2), ind)
             plt.axis([0, prob_map.width, 0, prob_map.height], "equal")
             plt.title("Tracker"+str(myid))
             plt.grid()
             # regenerate the lables of x, y
-            plt.xticks(np.arange(0, width_meter/resolution,5/resolution), np.arange(-width_meter/2, width_meter/2, 5))
-            plt.yticks(np.arange(0, height_meter/resolution,5/resolution), np.arange(-height_meter/2, height_meter/2, 5))
+            plt.xticks(np.arange(0, width_meter/resolution, 5/resolution),
+                       np.arange(-width_meter/2, width_meter/2, 5))
+            plt.yticks(np.arange(0, height_meter/resolution, 5/resolution),
+                       np.arange(-height_meter/2, height_meter/2, 5))
             plt.draw()
             plt.pause(0.01)
 

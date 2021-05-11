@@ -77,11 +77,11 @@ class ProbMap(GridMap):
         for cell_ind in self.non_empty_cell.keys():
             # update all existing grids
             if cell_ind in meas_index:
-                # NOTE I think here was a bug, I did't get confidence from the measument dict.
                 meas_confidence = meas_index[cell_ind]
                 old_cell_prob = self.get_value_from_xy_index(cell_ind)
                 new_cell_prob = (meas_confidence*old_cell_prob)\
-                    / ((meas_confidence*old_cell_prob)+self.false_alarm_prob*(1-old_cell_prob))
+                    / ((meas_confidence*old_cell_prob)+(1-meas_confidence)*(1-old_cell_prob))
+
                 self.set_value_from_xy_index(cell_ind, new_cell_prob)
                 # If we have merged this measument into our prob map, we can delete it to get the unmerged part
                 # del meas_index[cell_ind]
@@ -92,10 +92,10 @@ class ProbMap(GridMap):
                 meas_confidence = gauss(0.85, 0.1) # generate a reasonable prob for not sensing anything
                 old_cell_prob = self.get_value_from_xy_index(cell_ind)
                 new_cell_prob = ((1-meas_confidence)*old_cell_prob)\
-                    / ((1-meas_confidence)*old_cell_prob+(1-self.false_alarm_prob)*(1-old_cell_prob))
+                    / ((1-meas_confidence)*old_cell_prob+meas_confidence*(1-old_cell_prob))
+                # If the probability after update is even smaller than initial value,
+                # it's safe to delete the cell for a better memory usage
                 if new_cell_prob <= self.init_val:
-                    # If the probability after update is even smaller than initial value,
-                    # it's safe to delete the cell for a better memory usage
                     self.delete_value_from_xy_index(cell_ind)
                 else:
                     self.set_value_from_xy_index(cell_ind, new_cell_prob)
@@ -106,6 +106,7 @@ class ProbMap(GridMap):
                 meas_confidence = meas_index[cell_ind]
                 old_cell_prob = self.init_val
                 new_cell_prob = (meas_confidence*old_cell_prob)\
-                    / ((meas_confidence*old_cell_prob)+self.false_alarm_prob*(1-old_cell_prob))
-                # new_cell_prob = meas_confidence
+                    / ((meas_confidence*old_cell_prob)+(1-meas_confidence)*(1-old_cell_prob))
+                # v = 
+                # Q = np.log(1/self.init_val-1)+v
                 self.set_value_from_xy_index(cell_ind, new_cell_prob)
