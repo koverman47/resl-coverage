@@ -67,14 +67,16 @@ class ProbMap(GridMap):
         except KeyError:
             pass
 
-    def map_update(self, measurement):
-        """Update the probability map by received measurement
+    def map_update_local_info(self, measurement):
+        """Update the probability map by local measurement and generate shareable infomation
 
         Args:
             measurement_dict (dict): Contains measurements like {id1:[x1, y1, confidence1], id2:[x2, y2, confidence2]}
         """
         DEBUG = 0
         meas_index = dict()
+        # shareable_v contains the local measurements information for consensus step
+        shareable_v = dict()
         # Transfer the measurement to a dict like {(x, y) : prob}, where x,y is the index of the grid
         for _target_id, meas in measurement.items():
             x_pos, y_pos, meas_confidence = meas
@@ -89,8 +91,10 @@ class ProbMap(GridMap):
                 Q = self.get_value_from_xy_index(cell_ind)+v
                 # TEST nan check
                 if DEBUG and np.isnan(Q):
-                    print("Updating grid", self.get_value_from_xy_index(cell_ind), v, meas_confidence)
+                    print("Updating grid", self.get_value_from_xy_index(
+                        cell_ind), v, meas_confidence)
                 self.set_value_from_xy_index(cell_ind, Q)
+                shareable_v[cell_ind] = v
                 # If this measument has merged into the prob map, delete it to get the unmerged part
                 # del meas_index[cell_ind]
                 # TEST Flag out the value
@@ -106,8 +110,10 @@ class ProbMap(GridMap):
                 Q = self.get_value_from_xy_index(cell_ind)+v
                 # TEST nan check
                 if DEBUG and np.isnan(Q):
-                    print("Nomeasurement grid", self.get_value_from_xy_index(cell_ind), v, meas_confidence)
+                    print("No measurement grid", self.get_value_from_xy_index(
+                        cell_ind), v, meas_confidence)
                 self.set_value_from_xy_index(cell_ind, Q)
+                shareable_v[cell_ind] = v
         # For the measuments appearing in the new cells
         for cell_ind, meas_confidence in meas_index.items():
             # Check if the value is unmerged
@@ -115,10 +121,40 @@ class ProbMap(GridMap):
                 meas_confidence = meas_index[cell_ind]
                 v = np.log(self.false_alarm_prob/meas_confidence)
                 Q = np.log(1/self.init_val-1)+v
+                shareable_v[cell_ind] = v
                 # TEST nan check
                 if DEBUG and np.isnan(Q):
-                    print("Creating grid", self.get_value_from_xy_index(cell_ind), v, meas_confidence)
+                    print("Creating grid", self.get_value_from_xy_index(
+                        cell_ind), v, meas_confidence)
                 self.set_value_from_xy_index(cell_ind, Q)
+                shareable_v[cell_ind] = v
         # TEST print out the map data
         if DEBUG:
             print(self.non_empty_cell)
+        # print(self.non_empty_cell)
+        return shareable_v
+
+    def map_update_neighbor_info(self, neighbor_meas):
+        """This function takes all the neighbors' shared info and update
+        the probability map by those info.
+
+        Args:
+            neighbor_meas (dict): Including the v value from other neighboring t
+
+        Returns:
+            dict: The new probability map after contains all info from neighbors
+        """
+        for cell_ind in self.non_empty_cell:
+            if cell_ind in neighbor_meas.keys():
+                self.non_empty_cell[cell_ind] += neighbor_meas[cell_ind]
+                del neighbor_meas[cell_ind]
+        else:
+            self.non_empty_cell.update(neighbor_meas)
+
+        # return H after update the map by neighbors' info(shareable_v)
+        return self.non_empty_cell
+
+    def map_fuse_neighbor_info(self, neighbor_maps):
+
+        # return Q after fuse the maps with neighbors' maps
+        return self.non_empty_cell

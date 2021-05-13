@@ -18,7 +18,10 @@ from resl_coverage.srv import TriggerFail, TriggerFailResponse
 from resl_coverage.srv import State, StateResponse
 from resl_coverage.srv import Neighbors, NeighborsRequest
 from prob_map import ProbMap
+from resl_coverage.srv import MeasShare, MeasShareRequest, MeasShareResponse
 import matplotlib.pyplot as plt
+from itertools import chain
+
 # build a grid map
 #           |--size: 20m x 20m
 #           |--resolution: 0.1m
@@ -41,6 +44,7 @@ ob_rec = {}
 information_q = {}  # Update to dictionary
 information_W = {}  # Update to dictionary
 edges = []
+
 # Declare Subscribers
 offset_sub = None
 tracker_pose_sub = None
@@ -62,6 +66,12 @@ H = None
 U = None
 Q = None
 R = None
+
+# Shareable information
+all_meas_info_service = []
+# meas_information = None
+local_meas_info_res = MeasShareResponse()
+neighbors_meas = dict()
 
 
 def pose_callback(msg, args):
@@ -141,10 +151,7 @@ def handle_offsets(req):
     res.rec = 1
     return res
 
-
-def handle_process_noise(req):
-    global R
-    return ProcessNoiseResponse(R.flatten())
+# XXX what failure?
 
 
 def handle_failure(req):
@@ -162,6 +169,11 @@ def handle_failure(req):
     return res
 
 
+def handle_process_noise(req):
+    global R
+    return ProcessNoiseResponse(R.flatten())
+
+
 def handle_trigger_fail(req):
     global R
     R = np.dot(1.1, R)
@@ -175,6 +187,28 @@ def handle_state_request(req):
     res.state = np.array(estimates).flatten()
     res.measured = meas
     return res
+
+
+def handle_share_meas(req):
+    return local_meas_info_res
+
+
+def get_all_neighbors_meas():
+    global myid, neighbors_meas
+    neighbors_meas = dict()
+    all_meas = []
+    for s in all_meas_info_service:
+        all_meas.append(s(myid))
+
+    for res in all_meas:
+        for i in range(len(res.values)):
+            cell_ind = tuple([res.grid_ind[i*2], res.grid_ind[i*2+1]])
+            value = res.values[i]
+            # sum all neighbors' values
+            try:
+                neighbors_meas[cell_ind] += value
+            except KeyError:
+                neighbors_meas[cell_ind] = value
 
 
 def init_params():
@@ -200,6 +234,7 @@ def init_messages():
     # Publication
     global state_information, desired_pose
     global des_pub, information_pub
+
     state_information = MultiStateEstimate()
     desired_pose = PoseStamped()
 
@@ -244,8 +279,32 @@ def init_services():
     neighbors_req = NeighborsRequest()
     neighbors_service = rospy.ServiceProxy(name+'neighbors', Neighbors)
 
+    # Service that shares the local measurements
+    meas_info_res = rospy.Service(
+        name+'meas_info', MeasShare, handle_share_meas)
 
-def track(plot_map = 0):
+
+def init_meas_services():
+    global edges, name
+    rospy.logdebug(name+"MeasServices initializing", edges)
+    for i in edges:
+        rospy.logdebug("checking measurement service of Tracker"+str(i))
+        rospy.wait_for_service('/tracker{}/'.format(i)+'meas_info')
+        all_meas_info_service.append(rospy.ServiceProxy(
+            name+'meas_info', MeasShare))
+
+
+def build_shareable_v(shareable_v):
+    global myid, local_meas_info_res
+
+    local_meas_info_res = MeasShareResponse()
+    local_meas_info_res.tracker_id = myid
+    for k, v in shareable_v.items():
+        local_meas_info_res.grid_ind += k
+        local_meas_info_res.values.append(v)
+
+
+def track(plot_map=0):
     global num_targets, num_trackers, myid, name
     global irec, q, W, information_q, information_W
     global obs, offset, estimates, covariances
@@ -254,8 +313,11 @@ def track(plot_map = 0):
     global desired_pose, des_pub
     global information_pub, state_information
     global tracker_pose
-    global prob_map
-    
+    global prob_map, neighbors_meas
+    global local_meas_info_res
+
+    print(name+"start tracking...")
+
     if plot_map:
         # Plot the dynamic prob map
         plt.ion()
@@ -263,14 +325,17 @@ def track(plot_map = 0):
 
     rospy.init_node(name[1:-1] + '_tracking')
 
+    print(name+"node initialized")
+
     detector = Detector(3.141592654 / 4.)
 
     rospy.sleep(5)
     rate = rospy.Rate(10)
+    init_meas_services()
     while not rospy.is_shutdown():
         while not edges:
+            rospy.logdebug(name+" passing 'cuz no edges")
             pass
-        print(name, edges)
 
         if all([ob[0] for k, ob in obs.items()]):
             obs, z_rec = detector.get_detections(
@@ -282,27 +347,46 @@ def track(plot_map = 0):
                 if z_rec[i]:
                     real_obs[i] = obs[i]
 
-            # use real observation data to update the prob map
-            prob_map.map_update(real_obs)
+            # use local real observation data to update the prob map
+            shareable_v = prob_map.map_update_local_info(real_obs)
+
+            # build the response for shareable_v
+            build_shareable_v(shareable_v)
+            # rospy.logdebug(name+"local meas",local_meas_info_res)
+
+            # get all neighbors' measurements
+            # XXX maybe should not use global variables
+            get_all_neighbors_meas()
+            # rospy.logdebug(name+"Neighbors meas",neighbors_meas)
+
+            shareable_H = prob_map.map_update_neighbor_info(neighbors_meas)
+            # NOTE I think it's nessecery to restore the neighbors' measurement
+            neighbors_meas = dict()
             
+            # TODO do the same thing as above to get H from neighbors and merge it into map
+            build_shareable_H()
+            get_all_neighbors_H()
+            prob_map.map_fuse_neighbor_info()
+
             #####################
             # Plot the Prob map #
             #####################
             if plot_map:
                 plt.clf()
                 for ind, value in prob_map.non_empty_cell.items():
-                    plt.scatter(ind[0], ind[1], s=round(np.arctan(value)*20,2), c='r')
+                    plt.scatter(ind[0], ind[1], s=round(
+                        np.arctan(value)*20, 2), c='r')
                     # plt.annotate(round(value, 2), ind)
                     # if value>=0.5:
                     #     plt.annotate(round(value,2), ind)
                 plt.axis([0, prob_map.width, 0, prob_map.height], "equal")
                 plt.title("Tracker"+str(myid))
-                plt.grid(alpha = 0.1)
+                plt.grid(alpha=0.1)
                 # regenerate the labels of x, y
                 plt.xticks(np.arange(0, width_meter/resolution, 5/resolution),
-                        np.arange(-width_meter/2, width_meter/2, 5))
+                           np.arange(-width_meter/2, width_meter/2, 5))
                 plt.yticks(np.arange(0, height_meter/resolution, 5/resolution),
-                        np.arange(-height_meter/2, height_meter/2, 5))
+                           np.arange(-height_meter/2, height_meter/2, 5))
                 plt.draw()
                 plt.pause(0.01)
 
@@ -320,6 +404,6 @@ if __name__ == "__main__":
         init_params()
         init_services()
         init_messages()
-        track(plot_map=1)
+        track(plot_map=0)
     except rospy.ROSInterruptException:
         pass

@@ -199,10 +199,6 @@ def monitor():
                     state[i][2] += states[j][i][2]
                     state[i][3] += states[j][i][3]
             if count_z > 0:
-                #SE.state[0] = state[i][0] / count_z # num_trackers
-                #SE.state[1] = state[i][1] / count_z
-                #SE.state[2] = state[i][2] / count_z
-                #SE.state[3] = state[i][3] / count_z
                 SE.pose.position.x = state[i][0]
                 SE.pose.position.y = state[i][1]
                 SE.twist.linear.x = state[i][2]
