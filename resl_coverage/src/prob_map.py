@@ -29,7 +29,6 @@ class ProbMap(GridMap):
         GridMap.__init__(self, width_meter, height_meter, resolution,
                          center_x, center_y, init_val)
         self.non_empty_cell = dict()
-        # TODO Figure out how to set this value
         self.false_alarm_prob = false_alarm_prob
 
     def set_value_from_xy_index(self, index, val):
@@ -41,9 +40,8 @@ class ProbMap(GridMap):
         """
         # If the probability after update is even smaller than initial value,
         # it's safe to delete the cell for a better memory usage
-        if np.isnan(val) or val <= self.init_val:
+        if val <= self.init_val:
             self.delete_value_from_xy_index(index)
-            # self.delete_value_from_xy_index(index)
         else:
             self.non_empty_cell[index] = val
 
@@ -75,6 +73,7 @@ class ProbMap(GridMap):
         Args:
             measurement_dict (dict): Contains measurements like {id1:[x1, y1, confidence1], id2:[x2, y2, confidence2]}
         """
+        DEBUG = 0
         meas_index = dict()
         # Transfer the measurement to a dict like {(x, y) : prob}, where x,y is the index of the grid
         for _target_id, meas in measurement.items():
@@ -86,12 +85,15 @@ class ProbMap(GridMap):
             # update all existing grids
             if cell_ind in meas_index:
                 meas_confidence = meas_index[cell_ind]
-                old_cell_prob = self.get_value_from_xy_index(cell_ind)
-                v = np.log((1-meas_confidence)/meas_confidence)
-                Q = np.log(1/old_cell_prob-1)+v
+                v = np.log(self.false_alarm_prob/meas_confidence)
+                Q = self.get_value_from_xy_index(cell_ind)+v
+                # TEST nan check
+                if DEBUG and np.isnan(Q):
+                    print("Updating grid", self.get_value_from_xy_index(cell_ind), v, meas_confidence)
                 self.set_value_from_xy_index(cell_ind, Q)
                 # If this measument has merged into the prob map, delete it to get the unmerged part
                 # del meas_index[cell_ind]
+                # TEST Flag out the value
                 # For debug reasons, set the value to None
                 meas_index[cell_ind] = None
             else:
@@ -100,20 +102,23 @@ class ProbMap(GridMap):
                     1e-6 if x >= 1-1e-6 else x
                 # generate a reasonable prob for not sensing anything
                 meas_confidence = cutOff(np.random.normal(0.85, 0.1))
-                old_cell_prob = self.get_value_from_xy_index(cell_ind)
-                v = np.log(meas_confidence/(1-meas_confidence))
-                Q = np.log(1/old_cell_prob-1)+v
+                v = np.log((1-self.false_alarm_prob)/(1-meas_confidence))
+                Q = self.get_value_from_xy_index(cell_ind)+v
+                # TEST nan check
+                if DEBUG and np.isnan(Q):
+                    print("Nomeasurement grid", self.get_value_from_xy_index(cell_ind), v, meas_confidence)
                 self.set_value_from_xy_index(cell_ind, Q)
         # For the measuments appearing in the new cells
         for cell_ind, meas_confidence in meas_index.items():
             # Check if the value is unmerged
             if meas_confidence != None:
                 meas_confidence = meas_index[cell_ind]
-                # old_cell_prob = self.init_val
-                # new_cell_prob = (meas_confidence*old_cell_prob)\
-                #     / ((meas_confidence*old_cell_prob)+(1-meas_confidence)*(1-old_cell_prob))
-                v = np.log((1-meas_confidence)/meas_confidence)
+                v = np.log(self.false_alarm_prob/meas_confidence)
                 Q = np.log(1/self.init_val-1)+v
-                # self.set_value_from_xy_index(cell_ind, new_cell_prob)
+                # TEST nan check
+                if DEBUG and np.isnan(Q):
+                    print("Creating grid", self.get_value_from_xy_index(cell_ind), v, meas_confidence)
                 self.set_value_from_xy_index(cell_ind, Q)
-        # print(self.non_empty_cell)
+        # TEST print out the map data
+        if DEBUG:
+            print(self.non_empty_cell)

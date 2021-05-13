@@ -28,8 +28,8 @@ width_meter = 50
 height_meter = 50
 resolution = 0.2
 prob_map = ProbMap(width_meter, height_meter, resolution,
-                   center_x=0.0, center_y=0.0, init_val=0.1,
-                   false_alarm_prob=0.1)
+                   center_x=0.0, center_y=0.0, init_val=0.01,
+                   false_alarm_prob=0.05)
 
 
 num_targets = int(sys.argv[1])
@@ -40,7 +40,7 @@ irec = {}
 ob_rec = {}
 information_q = {}  # Update to dictionary
 information_W = {}  # Update to dictionary
-
+edges = []
 # Declare Subscribers
 offset_sub = None
 tracker_pose_sub = None
@@ -246,7 +246,7 @@ def init_services():
 
 
 def track(plot_map = 0):
-    global num_targets, num_trackers, myid
+    global num_targets, num_trackers, myid, name
     global irec, q, W, information_q, information_W
     global obs, offset, estimates, covariances
     global A, B, U, Q, H, R
@@ -270,6 +270,7 @@ def track(plot_map = 0):
     while not rospy.is_shutdown():
         while not edges:
             pass
+        print(name, edges)
 
         if all([ob[0] for k, ob in obs.items()]):
             obs, z_rec = detector.get_detections(
