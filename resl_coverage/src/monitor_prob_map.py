@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 from itertools import chain
 
 # build a grid map
-#           |--size: 20m x 20m
+#           |--size: 50m x 50m
 #           |--resolution: 0.1m
 #           |--center coordinates: [0.0m, 0.0m]
 #           |--default grid value: 0.1
@@ -68,10 +68,10 @@ Q = None
 R = None
 
 # Shareable information
-all_meas_info_service = []
-# meas_information = None
+all_meas_info_services = []
 local_meas_info_res = MeasShareResponse()
-neighbors_meas = dict()
+local_map_info_res = MeasShareResponse()
+# neighbors_meas = dict()
 
 
 def pose_callback(msg, args):
@@ -151,8 +151,6 @@ def handle_offsets(req):
     res.rec = 1
     return res
 
-# XXX what failure?
-
 
 def handle_failure(req):
     global estimates, covariances
@@ -190,25 +188,13 @@ def handle_state_request(req):
 
 
 def handle_share_meas(req):
-    return local_meas_info_res
-
-
-def get_all_neighbors_meas():
-    global myid, neighbors_meas
-    neighbors_meas = dict()
-    all_meas = []
-    for s in all_meas_info_service:
-        all_meas.append(s(myid))
-
-    for res in all_meas:
-        for i in range(len(res.values)):
-            cell_ind = tuple([res.grid_ind[i*2], res.grid_ind[i*2+1]])
-            value = res.values[i]
-            # sum all neighbors' values
-            try:
-                neighbors_meas[cell_ind] += value
-            except KeyError:
-                neighbors_meas[cell_ind] = value
+    if req.req_type == 'v':
+        return local_meas_info_res
+    elif req.req_type == 'H':
+        return local_map_info_res
+    else:
+        rospy.logerr(req.tracker_id +
+                     " is requiring wrong type of information:"+req.req_type)
 
 
 def init_params():
@@ -285,16 +271,23 @@ def init_services():
 
 
 def init_meas_services():
-    global edges, name
+    # XXX This can't handle the dynamic neighbor network
+    global edges, name, all_meas_info_services
     rospy.logdebug(name+"MeasServices initializing", edges)
     for i in edges:
         rospy.logdebug("checking measurement service of Tracker"+str(i))
         rospy.wait_for_service('/tracker{}/'.format(i)+'meas_info')
-        all_meas_info_service.append(rospy.ServiceProxy(
+        all_meas_info_services.append(rospy.ServiceProxy(
             name+'meas_info', MeasShare))
 
 
 def build_shareable_v(shareable_v):
+    """Generate shareable measurement from local measurement
+    V will be stored in global variable as a response to other neighbors.
+
+    Args:
+        shareable_v (dict): Stores all local measurements. Format: {(x, y) : value}
+    """
     global myid, local_meas_info_res
 
     local_meas_info_res = MeasShareResponse()
@@ -302,6 +295,60 @@ def build_shareable_v(shareable_v):
     for k, v in shareable_v.items():
         local_meas_info_res.grid_ind += k
         local_meas_info_res.values.append(v)
+
+
+def build_shareable_H(shareable_H):
+    """Generate shareable map information
+
+    Args:
+        shareable_H (dict): Stores updated(but not yet fused) map. Format: {(x, y) : value}
+    """
+    global myid, local_map_info_res
+
+    local_map_info_res = MeasShareResponse()
+    local_map_info_res.tracker_id = myid
+    for k, v in shareable_H.items():
+        local_map_info_res.grid_ind += k
+        local_map_info_res.values.append(v)
+
+
+def get_info_from_neighbors(req_type):
+    """Get info from neighbors
+
+    Args:
+        req_type (str): 'v' for measurement(shareable_v); 'H' for updated map.
+
+    Returns:
+        dict: All grid data with index
+    """
+    global myid, all_meas_info_services, num_trackers
+    neighbors_info = dict()
+    all_res = []
+    # build a request
+    request = MeasShareRequest()
+    request.tracker_id = myid
+    request.req_type = req_type
+    # Send requests and get responses from all neighbors' services
+    for service in all_meas_info_services:
+        all_res.append(service(request))
+    
+    # determine the factor for different type of info
+    if req_type == 'v':
+        w = 1
+    elif req_type == 'H':
+        w = 1./num_trackers
+        
+    for res in all_res:
+        for i in range(len(res.values)):
+            cell_ind = tuple([res.grid_ind[i*2], res.grid_ind[i*2+1]])
+            # sum all neighbors' values weighted by w
+            value = res.values[i]*w
+            try:
+                neighbors_info[cell_ind] += value
+            except KeyError:
+                neighbors_info[cell_ind] = value
+    return neighbors_info
+
 
 
 def track(plot_map=0):
@@ -313,13 +360,12 @@ def track(plot_map=0):
     global desired_pose, des_pub
     global information_pub, state_information
     global tracker_pose
-    global prob_map, neighbors_meas
+    global prob_map
     global local_meas_info_res
 
     print(name+"start tracking...")
-
+    # Plot the dynamic prob map
     if plot_map:
-        # Plot the dynamic prob map
         plt.ion()
         plt.plot()
 
@@ -334,7 +380,7 @@ def track(plot_map=0):
     init_meas_services()
     while not rospy.is_shutdown():
         while not edges:
-            rospy.logdebug(name+" passing 'cuz no edges")
+            rospy.logdebug(name+" passing, no edges")
             pass
 
         if all([ob[0] for k, ob in obs.items()]):
@@ -352,21 +398,19 @@ def track(plot_map=0):
 
             # build the response for shareable_v
             build_shareable_v(shareable_v)
-            # rospy.logdebug(name+"local meas",local_meas_info_res)
 
             # get all neighbors' measurements
-            # XXX maybe should not use global variables
-            get_all_neighbors_meas()
-            # rospy.logdebug(name+"Neighbors meas",neighbors_meas)
+            neighbors_meas = get_info_from_neighbors('v')
+            print(name+"Neighbors meas",neighbors_meas)
 
             shareable_H = prob_map.map_update_neighbor_info(neighbors_meas)
-            # NOTE I think it's nessecery to restore the neighbors' measurement
-            neighbors_meas = dict()
-            
+            # print("H", shareable_H)
+
             # TODO do the same thing as above to get H from neighbors and merge it into map
-            build_shareable_H()
-            get_all_neighbors_H()
-            prob_map.map_fuse_neighbor_info()
+            build_shareable_H(shareable_H)
+            neighbors_H = get_info_from_neighbors('H')
+            print("neib_H",neighbors_H)
+            prob_map.map_fuse_neighbor_info(neighbors_H, num_trackers, len(edges))
 
             #####################
             # Plot the Prob map #
@@ -374,8 +418,7 @@ def track(plot_map=0):
             if plot_map:
                 plt.clf()
                 for ind, value in prob_map.non_empty_cell.items():
-                    plt.scatter(ind[0], ind[1], s=round(
-                        np.arctan(value)*20, 2), c='r')
+                    plt.scatter(ind[0], ind[1], s=value, c='r')
                     # plt.annotate(round(value, 2), ind)
                     # if value>=0.5:
                     #     plt.annotate(round(value,2), ind)
@@ -404,6 +447,6 @@ if __name__ == "__main__":
         init_params()
         init_services()
         init_messages()
-        track(plot_map=0)
+        track(plot_map=1)
     except rospy.ROSInterruptException:
         pass

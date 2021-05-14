@@ -130,7 +130,7 @@ class ProbMap(GridMap):
                 shareable_v[cell_ind] = v
         # TEST print out the map data
         if DEBUG:
-            print(self.non_empty_cell)
+            print("The local map",self.non_empty_cell)
         # print(self.non_empty_cell)
         return shareable_v
 
@@ -144,17 +144,34 @@ class ProbMap(GridMap):
         Returns:
             dict: The new probability map after contains all info from neighbors
         """
+        # XXX not sure about this information decaying factor
+        alpha = 200
+        T = 0.1
         for cell_ind in self.non_empty_cell:
             if cell_ind in neighbor_meas.keys():
-                self.non_empty_cell[cell_ind] += neighbor_meas[cell_ind]
+                self.non_empty_cell[cell_ind] = np.exp(-alpha*T)*self.non_empty_cell[cell_ind] + neighbor_meas[cell_ind]
                 del neighbor_meas[cell_ind]
         else:
             self.non_empty_cell.update(neighbor_meas)
 
         # return H after update the map by neighbors' info(shareable_v)
+        print('The updated MAP:', self.non_empty_cell)
         return self.non_empty_cell
 
-    def map_fuse_neighbor_info(self, neighbor_maps):
+    def map_fuse_neighbor_info(self, neighbor_maps, N, d):
+        """Fuse the map with neighbors
 
-        # return Q after fuse the maps with neighbors' maps
-        return self.non_empty_cell
+        Args:
+            neighbor_maps (dict): [description]
+            N (int): Number of trackers
+            d (int): Number of neighbors
+        """
+        weight_of_self = 1.-(d-1.)/N
+        for cell_ind in neighbor_maps.keys():
+            if cell_ind in self.non_empty_cell:
+                self.non_empty_cell[cell_ind] = weight_of_self*self.non_empty_cell[cell_ind]+neighbor_maps[cell_ind]
+                del neighbor_maps[cell_ind]
+        else:
+            self.non_empty_cell.update(neighbor_maps)
+                
+        print("Final Map", self.non_empty_cell)
