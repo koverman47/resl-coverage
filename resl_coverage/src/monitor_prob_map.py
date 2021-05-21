@@ -190,7 +190,7 @@ def handle_state_request(req):
 def handle_share_meas(req):
     if req.req_type == 'v':
         return local_meas_info_res
-    elif req.req_type == 'H':
+    elif req.req_type == 'Q':
         return local_map_info_res
     else:
         rospy.logerr(req.tracker_id +
@@ -273,50 +273,42 @@ def init_services():
 def init_meas_services():
     # XXX This can't handle the dynamic neighbor network
     global edges, name, all_meas_info_services
-    rospy.logdebug(name+"MeasServices initializing", edges)
+    print(name+"MeasServices initializing", edges)
     for i in edges:
-        rospy.logdebug("checking measurement service of Tracker"+str(i))
         rospy.wait_for_service('/tracker{}/'.format(i)+'meas_info')
+        print("checking measurement service of Tracker"+str(i))
         all_meas_info_services.append(rospy.ServiceProxy(
-            name+'meas_info', MeasShare))
+            '/tracker{}/'.format(i)+'meas_info', MeasShare))
+    # print(all_meas_info_services[0].resolved_name, all_meas_info_services[1].resolved_name)
 
 
-def build_shareable_v(shareable_v):
-    """Generate shareable measurement from local measurement
-    V will be stored in global variable as a response to other neighbors.
-
-    Args:
-        shareable_v (dict): Stores all local measurements. Format: {(x, y) : value}
-    """
-    global myid, local_meas_info_res
-
-    local_meas_info_res = MeasShareResponse()
-    local_meas_info_res.tracker_id = myid
-    for k, v in shareable_v.items():
-        local_meas_info_res.grid_ind += k
-        local_meas_info_res.values.append(v)
-
-
-def build_shareable_H(shareable_H):
-    """Generate shareable map information
+def build_shareable_info_res(shareable_info, res_type):
+    """Generate shareable information from local
+    V or Q will be stored in global variable as a response to other neighbors.
 
     Args:
-        shareable_H (dict): Stores updated(but not yet fused) map. Format: {(x, y) : value}
+        shareable_info (dict): Stores all local infomation. Format: {(x, y) : value}
     """
-    global myid, local_map_info_res
-
-    local_map_info_res = MeasShareResponse()
-    local_map_info_res.tracker_id = myid
-    for k, v in shareable_H.items():
-        local_map_info_res.grid_ind += k
-        local_map_info_res.values.append(v)
+    global myid, local_meas_info_res, local_map_info_res
+    if res_type == 'v':
+        local_meas_info_res = MeasShareResponse()
+        local_meas_info_res.tracker_id = myid
+        for k, v in shareable_info.items():
+            local_meas_info_res.grid_ind += k
+            local_meas_info_res.values.append(v)
+    elif res_type == 'Q':
+        local_map_info_res = MeasShareResponse()
+        local_map_info_res.tracker_id = myid
+        for k, v in shareable_info.items():
+            local_map_info_res.grid_ind += k
+            local_map_info_res.values.append(v)
 
 
 def get_info_from_neighbors(req_type):
     """Get info from neighbors
 
     Args:
-        req_type (str): 'v' for measurement(shareable_v); 'H' for updated map.
+        req_type (str): 'v' for measurement(shareable_v); 'Q' for updated map.
 
     Returns:
         dict: All grid data with index
@@ -329,26 +321,35 @@ def get_info_from_neighbors(req_type):
     request.tracker_id = myid
     request.req_type = req_type
     # Send requests and get responses from all neighbors' services
+    # print("Check services",all_meas_info_services[0].resolved_name, all_meas_info_services[1].resolved_name)
     for service in all_meas_info_services:
-        all_res.append(service(request))
-    
-    # determine the factor for different type of info
+        res = service.call(request)
+        # print("Calling from",myid,"get",res)
+        all_res.append(res)
+    # print(name, all_res)
     if req_type == 'v':
-        w = 1
-    elif req_type == 'H':
-        w = 1./num_trackers
-        
-    for res in all_res:
-        for i in range(len(res.values)):
-            cell_ind = tuple([res.grid_ind[i*2], res.grid_ind[i*2+1]])
-            # sum all neighbors' values weighted by w
-            value = res.values[i]*w
-            try:
-                neighbors_info[cell_ind] += value
-            except KeyError:
-                neighbors_info[cell_ind] = value
-    return neighbors_info
+        for res in all_res:
+            for i in range(len(res.values)):
+                cell_ind = tuple([res.grid_ind[i*2], res.grid_ind[i*2+1]])
+                # sum all neighbors' measurement values
+                value = res.values[i]
+                try:
+                    neighbors_info[cell_ind] += value
+                except KeyError:
+                    neighbors_info[cell_ind] = value
+    elif req_type == 'Q':
+        for res in all_res:
+            for i in range(len(res.values)):
+                cell_ind = tuple([res.grid_ind[i*2], res.grid_ind[i*2+1]])
+                # sum all neighbors' values and counting, need to calculate average value
+                value = res.values[i]
+                try:
+                    neighbors_info[cell_ind][0] += value
+                    neighbors_info[cell_ind][1] += 1.
+                except KeyError:
+                    neighbors_info[cell_ind] = [value, 1.]
 
+    return neighbors_info
 
 
 def track(plot_map=0):
@@ -394,31 +395,36 @@ def track(plot_map=0):
                     real_obs[i] = obs[i]
 
             # use local real observation data to update the prob map
-            shareable_v = prob_map.map_update_local_info(real_obs)
+            shareable_v = prob_map.generate_shareable_v(real_obs)
 
             # build the response for shareable_v
-            build_shareable_v(shareable_v)
+            build_shareable_info_res(shareable_v, 'v')
 
-            # get all neighbors' measurements
+            # # get all neighbors' measurements
             neighbors_meas = get_info_from_neighbors('v')
-            print(name+"Neighbors meas",neighbors_meas)
+            # print(name+"Neighbors meas",neighbors_meas)
 
-            shareable_H = prob_map.map_update_neighbor_info(neighbors_meas)
-            # print("H", shareable_H)
+            # Update the local map by all neighbors measument
+            prob_map.map_update(shareable_v, neighbors_meas,
+                                num_trackers, len(edges))
+            # Convert prob map to a shareable information
+            build_shareable_info_res(prob_map.non_empty_cell, 'Q')
+            # Collect neighbors' map for consensus
+            neighbors_map = get_info_from_neighbors('Q')
+            # print("From ", name, neighbors_map)
 
-            # TODO do the same thing as above to get H from neighbors and merge it into map
-            build_shareable_H(shareable_H)
-            neighbors_H = get_info_from_neighbors('H')
-            print("neib_H",neighbors_H)
-            prob_map.map_fuse_neighbor_info(neighbors_H, num_trackers, len(edges))
+            prob_map.consensus(neighbors_map)
 
             #####################
             # Plot the Prob map #
             #####################
             if plot_map:
                 plt.clf()
-                for ind, value in prob_map.non_empty_cell.items():
-                    plt.scatter(ind[0], ind[1], s=value, c='r')
+                for ind, value in prob_map.prob_map.items():
+                    # if value >= 0.3:
+                    # if value>5:
+                    #     value = 5
+                    plt.scatter(ind[0], ind[1], s=2, c='r')
                     # plt.annotate(round(value, 2), ind)
                     # if value>=0.5:
                     #     plt.annotate(round(value,2), ind)

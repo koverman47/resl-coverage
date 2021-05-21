@@ -38,9 +38,9 @@ class ProbMap(GridMap):
             index (tuple): 2D tuple represents x, y coordinates.
             val (float): Value need to be stored.
         """
-        # If the probability after update is even smaller than initial value,
+        # If Q value after update is small enough to make the probability be zero,
         # it's safe to delete the cell for a better memory usage
-        if val <= self.init_val:
+        if val == 700.0:
             self.delete_value_from_xy_index(index)
         else:
             self.non_empty_cell[index] = val
@@ -67,111 +67,111 @@ class ProbMap(GridMap):
         except KeyError:
             pass
 
-    def map_update_local_info(self, measurement):
-        """Update the probability map by local measurement and generate shareable infomation
-
-        Args:
-            measurement_dict (dict): Contains measurements like {id1:[x1, y1, confidence1], id2:[x2, y2, confidence2]}
-        """
-        DEBUG = 0
+    def generate_shareable_v(self, local_measurement):
         meas_index = dict()
-        # shareable_v contains the local measurements information for consensus step
-        shareable_v = dict()
-        # Transfer the measurement to a dict like {(x, y) : prob}, where x,y is the index of the grid
-        for _target_id, meas in measurement.items():
+        for _target_id, meas in local_measurement.items():
             x_pos, y_pos, meas_confidence = meas
             point_ind = tuple(self.get_xy_index_from_xy_pos(x_pos, y_pos))
-            meas_index[point_ind] = meas_confidence
+            # meas_index[point_ind] = meas_confidence
+            meas_index[point_ind] = np.log(
+                self.false_alarm_prob/meas_confidence)
+        return meas_index
 
-        for cell_ind in self.non_empty_cell.keys():
-            # update all existing grids
-            if cell_ind in meas_index:
-                meas_confidence = meas_index[cell_ind]
-                v = np.log(self.false_alarm_prob/meas_confidence)
-                Q = self.get_value_from_xy_index(cell_ind)+v
-                # TEST nan check
-                if DEBUG and np.isnan(Q):
-                    print("Updating grid", self.get_value_from_xy_index(
-                        cell_ind), v, meas_confidence)
-                self.set_value_from_xy_index(cell_ind, Q)
-                shareable_v[cell_ind] = v
-                # If this measument has merged into the prob map, delete it to get the unmerged part
-                # del meas_index[cell_ind]
-                # TEST Flag out the value
-                # For debug reasons, set the value to None
-                meas_index[cell_ind] = None
-            else:
-                # if the existing grid doesn't have any update data means nothing there
-                def cutOff(x): return 1e-6 if x <= 1e-6 else 1 - \
-                    1e-6 if x >= 1-1e-6 else x
-                # generate a reasonable prob for not sensing anything
-                meas_confidence = cutOff(np.random.normal(0.85, 0.1))
-                v = np.log((1-self.false_alarm_prob)/(1-meas_confidence))
-                Q = self.get_value_from_xy_index(cell_ind)+v
-                # TEST nan check
-                if DEBUG and np.isnan(Q):
-                    print("No measurement grid", self.get_value_from_xy_index(
-                        cell_ind), v, meas_confidence)
-                self.set_value_from_xy_index(cell_ind, Q)
-                shareable_v[cell_ind] = v
-        # For the measuments appearing in the new cells
-        for cell_ind, meas_confidence in meas_index.items():
-            # Check if the value is unmerged
-            if meas_confidence != None:
-                meas_confidence = meas_index[cell_ind]
-                v = np.log(self.false_alarm_prob/meas_confidence)
-                Q = np.log(1/self.init_val-1)+v
-                shareable_v[cell_ind] = v
-                # TEST nan check
-                if DEBUG and np.isnan(Q):
-                    print("Creating grid", self.get_value_from_xy_index(
-                        cell_ind), v, meas_confidence)
-                self.set_value_from_xy_index(cell_ind, Q)
-                shareable_v[cell_ind] = v
-        # TEST print out the map data
-        if DEBUG:
-            print("The local map",self.non_empty_cell)
-        # print(self.non_empty_cell)
-        return shareable_v
+    def generate_zero_meas(self):
+        def cut(x): return 1e-6 if x <= 1e-6 else 1 - \
+            1e-6 if x >= 1-1e-6 else x
+        meas_confidence = cut(np.random.normal(0.85, 0.1))
+        x = np.log((1-self.false_alarm_prob)/(1-meas_confidence))
+        return x
 
-    def map_update_neighbor_info(self, neighbor_meas):
-        """This function takes all the neighbors' shared info and update
-        the probability map by those info.
+    def map_update(self, local_measurement, neighbor_measurement, N, d):
+        """Update the probability map by measurements and generate shareable infomation if needed.
 
         Args:
-            neighbor_meas (dict): Including the v value from other neighboring t
-
-        Returns:
-            dict: The new probability map after contains all info from neighbors
+            measurement (dict): Contains measurements like {id1:[x1, y1, confidence1], id2:[x2, y2, confidence2]}
+            N (int): Number of all trackers
+            d (int): Number of all neighbors
+            local (bool, optional): Local update or neighbor update. Defaults to True.
         """
-        # XXX not sure about this information decaying factor
-        alpha = 200
+
+        DEBUG = 0
+        # We don't need a huge
+
+        def bound_Q(Q):
+            # 700 is big enough to make 1/(1+exp(700)) -> 0
+            return max(min(Q, 700), -700)
+
+        # Get the weight of measurements
+        weight_local = 1. - (d-1.)/N
+        weight_neighbor = 1./N
+
+        # Time decaying factor
+        alpha = 4
         T = 0.1
-        for cell_ind in self.non_empty_cell:
-            if cell_ind in neighbor_meas.keys():
-                self.non_empty_cell[cell_ind] = np.exp(-alpha*T)*self.non_empty_cell[cell_ind] + neighbor_meas[cell_ind]
-                del neighbor_meas[cell_ind]
+        decay_factor = np.exp(-alpha*T)
+
+        # update all existing grids
+        for cell_ind in self.non_empty_cell.keys():
+            if cell_ind in local_measurement:
+                v_local = local_measurement[cell_ind]
+                del local_measurement[cell_ind]
+            else:
+                v_local = self.generate_zero_meas()
+
+            if cell_ind in neighbor_measurement:
+                v_neighbors = neighbor_measurement[cell_ind]
+                del neighbor_measurement[cell_ind]
+            else:
+                v_neighbors = sum(
+                    [self.generate_zero_meas() for i in range(d)])
+
+            Q = weight_local*(self.non_empty_cell[cell_ind] + v_local) + weight_neighbor * (
+                d*self.non_empty_cell[cell_ind]+v_neighbors)
+            self.set_value_from_xy_index(cell_ind, bound_Q(decay_factor * Q))
+        # If got measurement for a new cell
         else:
-            self.non_empty_cell.update(neighbor_meas)
+            # get the union set of all remaining measurements
+            all_meas = set(local_measurement.keys() +
+                           neighbor_measurement.keys())
+            for cell_ind in all_meas:
+                try:
+                    v_local = local_measurement[cell_ind]
+                except KeyError:
+                    # print("no v_local")
+                    v_local = self.generate_zero_meas()
+                try:
+                    v_neighbors = neighbor_measurement[cell_ind]
+                except KeyError:
+                    # print("no v_neigh")
+                    v_neighbors = sum(
+                        [self.generate_zero_meas() for i in range(d)])
+                Q = weight_local*(self.init_val + v_local) + weight_neighbor * (
+                    d*self.init_val+v_neighbors)
+                self.set_value_from_xy_index(
+                    cell_ind, bound_Q(decay_factor * Q))
 
-        # return H after update the map by neighbors' info(shareable_v)
-        print('The updated MAP:', self.non_empty_cell)
-        return self.non_empty_cell
-
-    def map_fuse_neighbor_info(self, neighbor_maps, N, d):
-        """Fuse the map with neighbors
+    def consensus(self, neighbors_map):
+        """Merge neighbors map into local map and make a consensus
 
         Args:
-            neighbor_maps (dict): [description]
-            N (int): Number of trackers
-            d (int): Number of neighbors
+            neighbors_map (dict): Contains all values from neighbors and have a count of it. Format: {(x, y):[value, count]}
         """
-        weight_of_self = 1.-(d-1.)/N
-        for cell_ind in neighbor_maps.keys():
-            if cell_ind in self.non_empty_cell:
-                self.non_empty_cell[cell_ind] = weight_of_self*self.non_empty_cell[cell_ind]+neighbor_maps[cell_ind]
-                del neighbor_maps[cell_ind]
+        for cell_ind, value in self.non_empty_cell.items():
+            if cell_ind in neighbors_map:
+                # Calculate the average value of Q
+                Q = (neighbors_map[cell_ind][0]+value) / \
+                    (neighbors_map[cell_ind][1]+1)
+                self.set_value_from_xy_index(cell_ind, Q)
+                del neighbors_map[cell_ind]
         else:
-            self.non_empty_cell.update(neighbor_maps)
-                
-        print("Final Map", self.non_empty_cell)
+            for cell_ind, value_and_count in neighbors_map.items():
+                Q = value_and_count[0]/value_and_count[1]
+                self.set_value_from_xy_index(cell_ind, Q)
+        self.convert_to_prob_map()
+
+    def convert_to_prob_map(self):
+        self.prob_map = dict()
+        for cell_ind, value in self.non_empty_cell.items():
+            prob = 1./(1.+np.exp(value))
+            if prob>=0.01:
+                self.prob_map[cell_ind] = prob
