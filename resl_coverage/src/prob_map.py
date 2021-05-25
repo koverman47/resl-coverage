@@ -1,10 +1,8 @@
-from numpy.core.fromnumeric import nonzero
-from numpy.lib import index_tricks
-from lib_grid_map import GridMap
+# -*- coding: utf-8 -*-
 import numpy as np
 
 
-class ProbMap(GridMap):
+class ProbMap:
     """[summary]
 
     Args:
@@ -26,24 +24,40 @@ class ProbMap(GridMap):
 
     def __init__(self, width_meter, height_meter, resolution,
                  center_x, center_y, init_val=0.01, false_alarm_prob=0.05):
-        GridMap.__init__(self, width_meter, height_meter, resolution,
-                         center_x, center_y, init_val)
-        self.non_empty_cell = dict()
-        self.false_alarm_prob = false_alarm_prob
-
-    def set_value_from_xy_index(self, index, val):
-        """Stores the value in grid map
+        """Generate a probability map
 
         Args:
-            index (tuple): 2D tuple represents x, y coordinates.
-            val (float): Value need to be stored.
+            width_meter (int): width of the area [m]
+            height_meter (int): height of the area [m]
+            resolution (float): grid resolution [m]
+            center_x (float): center x position  [m]
+            center_y (float): center y position  [m]
+            init_val (float, optional): Initial value for all cells. Defaults to 0.01.
+            false_alarm_prob (float, optional): False alarm probability of the detector. Defaults to 0.05.
         """
-        # If Q value after update is small enough to make the probability be zero,
-        # it's safe to delete the cell for a better memory usage
-        if val == 700.0:
-            self.delete_value_from_xy_index(index)
+
+        # number of cells for width
+        self.width = int(np.ceil(width_meter / resolution))
+        # number of cells for height
+        self.height = int(np.ceil(height_meter / resolution))
+        self.resolution = resolution
+        self.center_x = center_x
+        self.center_y = center_y
+        self.init_val = init_val
+        self.false_alarm_prob = false_alarm_prob
+
+        self.left_lower_x = self.center_x - self.width / 2.0 * self.resolution
+        self.left_lower_y = self.center_y - self.height / 2.0 * self.resolution
+
+        self.ndata = self.width * self.height
+        self.non_empty_cell = dict()
+
+    def calc_xy_index_from_pos(self, pos, lower_pos, max_index):
+        ind = int(np.floor((pos - lower_pos) / self.resolution))
+        if 0 <= ind <= max_index:
+            return ind
         else:
-            self.non_empty_cell[index] = val
+            raise IndexError("Position not within the area")
 
     def get_value_from_xy_index(self, index):
         """Get the value from given cell
@@ -55,6 +69,35 @@ class ProbMap(GridMap):
             [float]: Value from the given cell
         """
         return self.non_empty_cell[index]
+
+    def get_xy_index_from_xy_pos(self, x_pos, y_pos):
+        """get_xy_index_from_xy_pos
+        :param x_pos: x position [m]
+        :param y_pos: y position [m]
+        """
+        x_ind = self.calc_xy_index_from_pos(
+            x_pos, self.left_lower_x, self.width)
+        y_ind = self.calc_xy_index_from_pos(
+            y_pos, self.left_lower_y, self.height)
+        return tuple([int(x_ind), int(y_ind)])
+
+    def get_value_from_xy_pos(self, x_pos, y_pos):
+        cell_ind = self.get_xy_index_from_xy_pos(x_pos, y_pos)
+        return self.get_value_from_xy_index(cell_ind)
+
+    def set_value_from_xy_index(self, index, val):
+        """Stores the value in grid map
+
+        Args:
+            index (tuple): 2D tuple represents x, y coordinates.
+            val (float): Value that needs to be stored.
+        """
+        # If Q value after update is small enough to make the probability be zero,
+        # it's safe to delete the cell for a better memory usage
+        if val == 700.0:
+            self.delete_value_from_xy_index(index)
+        else:
+            self.non_empty_cell[index] = val
 
     def delete_value_from_xy_index(self, index):
         """Delete the item from grid map
@@ -98,7 +141,7 @@ class ProbMap(GridMap):
         # We don't need a huge
 
         def bound_Q(Q):
-            # 700 is big enough to make 1/(1+exp(700)) -> 0
+            # 700 is big enough to make 1/(1+exp(700)) -> 0 and 1/(1+exp(-700)) -> 1
             return max(min(Q, 700), -700)
 
         # Get the weight of measurements
@@ -106,16 +149,40 @@ class ProbMap(GridMap):
         weight_neighbor = 1./N
 
         # Time decaying factor
-        alpha = 4
+        alpha = 5
         T = 0.1
         decay_factor = np.exp(-alpha*T)
-
-        # update all existing grids
+        # The diagram below shows the composition of the information for each update
+        # ┌─────────────────────────────────────────────────────┐
+        # │ Whole area                  .─────────.             │
+        # │                          ,─'   Local   '─.          │
+        # │             .─────────.,'   measurement   `.        │
+        # │          ,─' Existing ╱'─.                  ╲       │
+        # │        ,'      Cell  ;    `.                 :      │
+        # │      ,'              │  2   `.      5        │      │
+        # │     ;                │        :              │      │
+        # │     ;                :       .─────────.     ;      │
+        # │    ;                  ╲   ,─'  :        '─. ╱       │
+        # │    │                   ╲,'  4  │       6   `.       │
+        # │    │        1          ╱`.     │         ,'  ╲      │
+        # │    :                  ;   '─.  ;      ,─'     :     │
+        # │     :                 │      `───────'        │     │
+        # │     :                 │  3    ;               │     │
+        # │      ╲                :      ╱           7    ;     │
+        # │       `.               ╲   ,'                ╱      │
+        # │         `.              ╲,'   Neighbor      ╱       │
+        # │           '─.         ,─'`.  measurement  ,'        │
+        # │              `───────'     '─.         ,─'          │
+        # │                               `───────'             │
+        # └─────────────────────────────────────────────────────┘
+        # update all existing grids (Area 1,2,3,4)
         for cell_ind in self.non_empty_cell.keys():
+            # Check if it's in area 2 or 4
             if cell_ind in local_measurement:
                 v_local = local_measurement[cell_ind]
                 del local_measurement[cell_ind]
             else:
+                # If not, we believe there is no targets in cell
                 v_local = self.generate_zero_meas()
 
             if cell_ind in neighbor_measurement:
@@ -128,9 +195,10 @@ class ProbMap(GridMap):
             Q = weight_local*(self.non_empty_cell[cell_ind] + v_local) + weight_neighbor * (
                 d*self.non_empty_cell[cell_ind]+v_neighbors)
             self.set_value_from_xy_index(cell_ind, bound_Q(decay_factor * Q))
-        # If got measurement for a new cell
+
+        # If got measurement for a new cell (Cells in area 5, 6, 7)
         else:
-            # get the union set of all remaining measurements
+            # get the union set of all remaining measurements (Union of area 5, 6, 7)
             all_meas = set(local_measurement.keys() +
                            neighbor_measurement.keys())
             for cell_ind in all_meas:
@@ -173,5 +241,5 @@ class ProbMap(GridMap):
         self.prob_map = dict()
         for cell_ind, value in self.non_empty_cell.items():
             prob = 1./(1.+np.exp(value))
-            if prob>=0.01:
+            if prob >= 0.01:
                 self.prob_map[cell_ind] = prob

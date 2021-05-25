@@ -29,7 +29,7 @@ from itertools import chain
 #           |--default grid value: 0.1
 width_meter = 50
 height_meter = 50
-resolution = 0.2
+resolution = 0.1
 prob_map = ProbMap(width_meter, height_meter, resolution,
                    center_x=0.0, center_y=0.0, init_val=0.01,
                    false_alarm_prob=0.05)
@@ -60,7 +60,7 @@ meas = [False for i in range(num_targets)]
 
 set_est = [[False, False] for i in range(num_targets)]
 
-A = None
+
 B = None
 H = None
 U = None
@@ -69,9 +69,10 @@ R = None
 
 # Shareable information
 all_meas_info_services = []
+# Measurement information
 local_meas_info_res = MeasShareResponse()
+# Map information
 local_map_info_res = MeasShareResponse()
-# neighbors_meas = dict()
 
 
 def pose_callback(msg, args):
@@ -200,12 +201,11 @@ def handle_share_meas(req):
 def init_params():
     global name, myid
     global num_targets
-    global A, B, U, Q, H, R
+    global  B, U, Q, H, R
 
     name = rospy.get_namespace()
     myid = int(name[1:-1].replace('tracker', ''))
 
-    A = np.eye(4)
     B = np.concatenate((np.zeros((2, 2)), np.eye(2)))
     U = [np.ones(2) for i in range(num_targets)]
     Q = np.eye(4)
@@ -321,17 +321,14 @@ def get_info_from_neighbors(req_type):
     request.tracker_id = myid
     request.req_type = req_type
     # Send requests and get responses from all neighbors' services
-    # print("Check services",all_meas_info_services[0].resolved_name, all_meas_info_services[1].resolved_name)
     for service in all_meas_info_services:
         res = service.call(request)
-        # print("Calling from",myid,"get",res)
         all_res.append(res)
-    # print(name, all_res)
     if req_type == 'v':
         for res in all_res:
             for i in range(len(res.values)):
                 cell_ind = tuple([res.grid_ind[i*2], res.grid_ind[i*2+1]])
-                # sum all neighbors' measurement values
+                # sum up all neighbors' measurement values
                 value = res.values[i]
                 try:
                     neighbors_info[cell_ind] += value
@@ -341,7 +338,7 @@ def get_info_from_neighbors(req_type):
         for res in all_res:
             for i in range(len(res.values)):
                 cell_ind = tuple([res.grid_ind[i*2], res.grid_ind[i*2+1]])
-                # sum all neighbors' values and counting, need to calculate average value
+                # sum up all neighbors' values and counting, need to calculate average value
                 value = res.values[i]
                 try:
                     neighbors_info[cell_ind][0] += value
@@ -356,7 +353,7 @@ def track(plot_map=0):
     global num_targets, num_trackers, myid, name
     global irec, q, W, information_q, information_W
     global obs, offset, estimates, covariances
-    global A, B, U, Q, H, R
+    global B, U, Q, H, R
     global N, edges, node_weights, ob_rec, meas
     global desired_pose, des_pub
     global information_pub, state_information
@@ -414,6 +411,8 @@ def track(plot_map=0):
             # print("From ", name, neighbors_map)
 
             prob_map.consensus(neighbors_map)
+            # Convert to prob_map only if we need the result
+            prob_map.convert_to_prob_map()
 
             #####################
             # Plot the Prob map #
@@ -421,13 +420,9 @@ def track(plot_map=0):
             if plot_map:
                 plt.clf()
                 for ind, value in prob_map.prob_map.items():
-                    # if value >= 0.3:
-                    # if value>5:
-                    #     value = 5
-                    plt.scatter(ind[0], ind[1], s=2, c='r')
+                    if value >= 0.3:
+                        plt.scatter(ind[0], ind[1], s=2, c='r')
                     # plt.annotate(round(value, 2), ind)
-                    # if value>=0.5:
-                    #     plt.annotate(round(value,2), ind)
                 plt.axis([0, prob_map.width, 0, prob_map.height], "equal")
                 plt.title("Tracker"+str(myid))
                 plt.grid(alpha=0.1)
