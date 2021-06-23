@@ -128,7 +128,7 @@ class ProbMap:
         return x
 
     def map_update(self, local_measurement, neighbor_measurement, N, d):
-        """Update the probability map by measurements and generate shareable infomation if needed.
+        """Update the probability map using measurements from local and neighbors
 
         Args:
             measurement (dict): Contains measurements like {id1:[x1, y1, confidence1], id2:[x2, y2, confidence2]}

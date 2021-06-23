@@ -47,7 +47,7 @@ add_message_files(
 	FILES
 	StateEstimate.msg
 	MultiStateEstimate.msg
-	ShareableMeasInfo.msg
+	ProbMapData.msg
 )
 
 add_service_files(
@@ -59,7 +59,6 @@ add_service_files(
 	Coordinates.srv
 	State.srv
 	Neighbors.srv
-  MeasShare.srv
 )
 
 include_directories(

@@ -10,6 +10,7 @@ from detector import Detector
 from numpy.linalg import pinv
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from resl_coverage.msg import MultiStateEstimate
+from resl_coverage.msg import ProbMapData
 from resl_coverage.srv import Topology, TopologyResponse
 from resl_coverage.srv import ProcessNoise, ProcessNoiseResponse
 from resl_coverage.srv import Failure, FailureResponse
@@ -18,9 +19,7 @@ from resl_coverage.srv import TriggerFail, TriggerFailResponse
 from resl_coverage.srv import State, StateResponse
 from resl_coverage.srv import Neighbors, NeighborsRequest
 from prob_map import ProbMap
-from resl_coverage.srv import MeasShare, MeasShareRequest, MeasShareResponse
 import matplotlib.pyplot as plt
-from itertools import chain
 
 # build a grid map
 #           |--size: 50m x 50m
@@ -58,7 +57,7 @@ estimates = [np.array([0., 0., 0., 0.]) for i in range(num_targets)]
 offset = [float(sys.argv[3]), float(sys.argv[4]), 5.]
 meas = [False for i in range(num_targets)]
 
-set_est = [[False, False] for i in range(num_targets)]
+set_est = [[False, False] for _ in range(num_targets)]
 
 
 B = None
@@ -67,12 +66,9 @@ U = None
 Q = None
 R = None
 
-# Shareable information
-all_meas_info_services = []
-# Measurement information
-local_meas_info_res = MeasShareResponse()
-# Map information
-local_map_info_res = MeasShareResponse()
+# Store information from neighbors
+neighbors_v = dict()
+neighbors_Q = dict()
 
 
 def pose_callback(msg, args):
@@ -109,6 +105,21 @@ def information_callback(msg):
     information_W[msg.id] = np.array(msg.W).reshape((num_targets, 4, 4))
     irec[msg.id] = True
     ob_rec[msg.id] = msg.z_rec
+
+
+def callback_prob_map(msg):
+    # type: (ProbMapData) -> None
+    """Store all neighbors messages globaly
+
+    Args:
+        msg (ProbMapData): Recived messages from neighbors
+    """
+    # TODO remove messages that have not been updated for more than 3 seconds.
+    global neighbors_v, neighbors_Q, name
+    if msg.type == 'v':
+        neighbors_v[msg.tracker_id] = msg
+    elif msg.type == 'Q':
+        neighbors_Q[msg.tracker_id] = msg
 
 
 def handle_topology(req):
@@ -188,20 +199,10 @@ def handle_state_request(req):
     return res
 
 
-def handle_share_meas(req):
-    if req.req_type == 'v':
-        return local_meas_info_res
-    elif req.req_type == 'Q':
-        return local_map_info_res
-    else:
-        rospy.logerr(req.tracker_id +
-                     " is requiring wrong type of information:"+req.req_type)
-
-
 def init_params():
     global name, myid
     global num_targets
-    global  B, U, Q, H, R
+    global B, U, Q, H, R
 
     name = rospy.get_namespace()
     myid = int(name[1:-1].replace('tracker', ''))
@@ -220,6 +221,7 @@ def init_messages():
     # Publication
     global state_information, desired_pose
     global des_pub, information_pub
+    global share_v_pub, share_Q_pub
 
     state_information = MultiStateEstimate()
     desired_pose = PoseStamped()
@@ -227,6 +229,12 @@ def init_messages():
     des_pub = rospy.Publisher(name+'desired_pose', PoseStamped, queue_size=1)
     information_pub = rospy.Publisher(name+'state_information',
                                       MultiStateEstimate, queue_size=2*num_trackers)
+
+    # create publishers for shareable information
+    share_v_pub = rospy.Publisher(
+        name+'prob_map/share_v', ProbMapData, queue_size=2*num_trackers)
+    share_Q_pub = rospy.Publisher(
+        name+'prob_map/share_Q', ProbMapData, queue_size=2*num_trackers)
 
     # Subscription
     global offset_sub, target_pose_subs
@@ -240,7 +248,20 @@ def init_messages():
                              PoseStamped, pose_callback, i))
         # target_twist_subs.append(
         #     rospy.Subscriber('/unity_command/target'+str(i)+'/TrueState/twist',
-        #                      TwistStamped, twist_callback, i))
+        #                      TwistStamped, twist_callback, i)
+
+
+def init_neighbor_subscribers():
+    """Create subscribers for each neighbor
+    """
+    global edges, myid
+    print("Tracker{} got {} neighbors, initializing subscribers...".format(
+        myid, len(edges)))
+    for i in edges:
+        rospy.Subscriber(
+            '/tracker{}/'.format(i)+'prob_map/share_v', ProbMapData, callback_prob_map)
+        rospy.Subscriber(
+            '/tracker{}/'.format(i)+'prob_map/share_Q', ProbMapData, callback_prob_map)
 
 
 def init_services():
@@ -265,24 +286,8 @@ def init_services():
     neighbors_req = NeighborsRequest()
     neighbors_service = rospy.ServiceProxy(name+'neighbors', Neighbors)
 
-    # Service that shares the local measurements
-    meas_info_res = rospy.Service(
-        name+'meas_info', MeasShare, handle_share_meas)
 
-
-def init_meas_services():
-    # XXX This can't handle the dynamic neighbor network
-    global edges, name, all_meas_info_services
-    print(name+"MeasServices initializing", edges)
-    for i in edges:
-        rospy.wait_for_service('/tracker{}/'.format(i)+'meas_info')
-        print("checking measurement service of Tracker"+str(i))
-        all_meas_info_services.append(rospy.ServiceProxy(
-            '/tracker{}/'.format(i)+'meas_info', MeasShare))
-    # print(all_meas_info_services[0].resolved_name, all_meas_info_services[1].resolved_name)
-
-
-def build_shareable_info_res(shareable_info, res_type):
+def build_shareable_info(shareable_info, info_type):
     """Generate shareable information from local
     V or Q will be stored in global variable as a response to other neighbors.
 
@@ -290,22 +295,23 @@ def build_shareable_info_res(shareable_info, res_type):
         shareable_info (dict): Stores all local infomation. Format: {(x, y) : value}
     """
     global myid, local_meas_info_res, local_map_info_res
-    if res_type == 'v':
-        local_meas_info_res = MeasShareResponse()
-        local_meas_info_res.tracker_id = myid
-        for k, v in shareable_info.items():
-            local_meas_info_res.grid_ind += k
-            local_meas_info_res.values.append(v)
-    elif res_type == 'Q':
-        local_map_info_res = MeasShareResponse()
-        local_map_info_res.tracker_id = myid
-        for k, v in shareable_info.items():
-            local_map_info_res.grid_ind += k
-            local_map_info_res.values.append(v)
+    global share_v_pub, share_Q_pub
+    local_meas_info = ProbMapData()
+    local_meas_info.tracker_id = myid
+    local_meas_info.type = info_type
+    for k, v in shareable_info.items():
+        local_meas_info.grid_ind += k
+        local_meas_info.values.append(v)
+    if info_type == 'v':
+        share_v_pub.publish(local_meas_info)
+    elif info_type == 'Q':
+        share_Q_pub.publish(local_meas_info)
 
 
 def get_info_from_neighbors(req_type):
     """Get info from neighbors
+        Get all messages stored in neighbors_v and neighbors_Q,
+    and convert them to a probability map data then return.
 
     Args:
         req_type (str): 'v' for measurement(shareable_v); 'Q' for updated map.
@@ -314,18 +320,12 @@ def get_info_from_neighbors(req_type):
         dict: All grid data with index
     """
     global myid, all_meas_info_services, num_trackers
+    global neighbors_info, neighbors_Q, neighbors_v
     neighbors_info = dict()
-    all_res = []
-    # build a request
-    request = MeasShareRequest()
-    request.tracker_id = myid
-    request.req_type = req_type
     # Send requests and get responses from all neighbors' services
-    for service in all_meas_info_services:
-        res = service.call(request)
-        all_res.append(res)
+    # Collect info from neighbors
     if req_type == 'v':
-        for res in all_res:
+        for _id, res in neighbors_v.items():
             for i in range(len(res.values)):
                 cell_ind = tuple([res.grid_ind[i*2], res.grid_ind[i*2+1]])
                 # sum up all neighbors' measurement values
@@ -335,7 +335,7 @@ def get_info_from_neighbors(req_type):
                 except KeyError:
                     neighbors_info[cell_ind] = value
     elif req_type == 'Q':
-        for res in all_res:
+        for _id, res in neighbors_Q.items():
             for i in range(len(res.values)):
                 cell_ind = tuple([res.grid_ind[i*2], res.grid_ind[i*2+1]])
                 # sum up all neighbors' values and counting, need to calculate average value
@@ -375,7 +375,8 @@ def track(plot_map=0):
 
     rospy.sleep(5)
     rate = rospy.Rate(10)
-    init_meas_services()
+    init_neighbor_subscribers()
+
     while not rospy.is_shutdown():
         while not edges:
             rospy.logdebug(name+" passing, no edges")
@@ -395,22 +396,22 @@ def track(plot_map=0):
             shareable_v = prob_map.generate_shareable_v(real_obs)
 
             # build the response for shareable_v
-            build_shareable_info_res(shareable_v, 'v')
+            build_shareable_info(shareable_v, 'v')
 
-            # # get all neighbors' measurements
+            # get all neighbors' measurements
             neighbors_meas = get_info_from_neighbors('v')
-            # print(name+"Neighbors meas",neighbors_meas)
 
             # Update the local map by all neighbors measument
             prob_map.map_update(shareable_v, neighbors_meas,
                                 num_trackers, len(edges))
             # Convert prob map to a shareable information
-            build_shareable_info_res(prob_map.non_empty_cell, 'Q')
+            build_shareable_info(prob_map.non_empty_cell, 'Q')
             # Collect neighbors' map for consensus
             neighbors_map = get_info_from_neighbors('Q')
-            # print("From ", name, neighbors_map)
+            # print(neighbors_map)
 
             prob_map.consensus(neighbors_map)
+
             # Convert to prob_map only if we need the result
             prob_map.convert_to_prob_map()
 

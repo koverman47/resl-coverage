@@ -1,3 +1,0 @@
-int8 tracker_id
-int32[] grid_ind
-float64[] values
